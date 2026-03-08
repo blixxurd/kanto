@@ -9,7 +9,7 @@ You are building a browser-based open world Pokémon RPG set in the Kanto region
 - **Runtime:** PixiJS 8 + @pixi/tilemap + Howler.js (stubbed for phase 1) + TypeScript + Vite
 - **Extraction:** Python 3.10+ with Pillow and NumPy
 - **Map Format:** Tiled JSON (industry standard, editable in Tiled or in-game editor)
-- **Source Data:** `pret/pokefirered` decomp cloned into `decomp/` directory
+- **Source Data:** `pret/pokefirered` decomp cloned into `decomp/` directory (pinned to commit `7e3f822`)
 
 ## Key Documents
 

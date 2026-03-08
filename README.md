@@ -53,11 +53,14 @@ pip install pillow numpy
 
 ### 2. Get the decomp
 
-The extraction pipeline reads from the [pret/pokefirered](https://github.com/pret/pokefirered) decompilation. Clone it into a `decomp/` directory at the project root:
+The extraction pipeline reads from the [pret/pokefirered](https://github.com/pret/pokefirered) decompilation. Clone it into a `decomp/` directory at the project root, pinned to the tested commit:
 
 ```bash
 git clone https://github.com/pret/pokefirered.git decomp
+cd decomp && git checkout 7e3f822 && cd ..
 ```
+
+> **Note:** This project is tested against pokefirered commit `7e3f822`. Later revisions may change data layouts or file paths and break extraction. If you use a newer version and something breaks, try checking out this commit first.
 
 You do **not** need to build the decomp -- the extraction scripts read the raw data files directly.
 
