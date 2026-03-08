@@ -1,0 +1,32 @@
+{
+  "name": "kanto",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Open world Kanto RPG built from pokefirered decomp data",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "extract": "python3 scripts/extract_all.py",
+    "extract:tilesets": "python3 scripts/01_render_metatile_atlases.py",
+    "extract:stitch": "python3 scripts/06_stitch_overworld.py",
+    "test": "python3 scripts/tests/run_all.py",
+    "test:extraction": "python3 scripts/tests/validate_extraction.py",
+    "test:stitch": "python3 scripts/tests/validate_stitch.py",
+    "test:traversal": "python3 scripts/tests/validate_traversal.py",
+    "test:warps": "python3 scripts/tests/validate_warps.py",
+    "typecheck": "tsc --noEmit",
+    "test:browser": "node scripts/tests/browser_test.mjs"
+  },
+  "dependencies": {
+    "@pixi/tilemap": "^5.0.0",
+    "howler": "^2.2.4",
+    "pixi.js": "^8.5.0"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.0",
+    "playwright": "^1.58.2",
+    "typescript": "^5.5.0",
+    "vite": "^6.0.0"
+  }
+}

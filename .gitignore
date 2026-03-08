@@ -1,0 +1,26 @@
+node_modules/
+dist/
+intermediate/
+decomp/
+*.log
+public/maps/
+public/tilesets/
+public/sprites/
+public/data/
+!public/maps/.gitkeep
+!public/tilesets/.gitkeep
+!public/sprites/.gitkeep
+!public/data/.gitkeep
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+tmp/
+
+## Yes we use Claude. 
+## We believe you should use it too. 
+## We also believe everyone should configure it to their own needs. :) 
+.claude/
+reference/
+memory/
+.CLAUDE.md

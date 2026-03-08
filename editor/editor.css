@@ -1,0 +1,27 @@
+/* Editor UI styles */
+.editor-toolbar {
+  position: fixed; top: 0; left: 0; right: 0; height: 40px;
+  background: rgba(30,30,30,0.95); display: flex; align-items: center;
+  padding: 0 12px; gap: 8px; border-bottom: 1px solid #444; z-index: 101;
+}
+.editor-toolbar button {
+  background: #333; color: #eee; border: 1px solid #555;
+  padding: 4px 12px; cursor: pointer; font-size: 12px; border-radius: 3px;
+}
+.editor-toolbar button.active { background: #4a9eff; border-color: #4a9eff; }
+.tile-palette {
+  position: fixed; left: 0; top: 40px; bottom: 30px; width: 200px;
+  background: rgba(30,30,30,0.95); border-right: 1px solid #444;
+  overflow-y: auto; z-index: 101; image-rendering: pixelated;
+}
+.property-panel {
+  position: fixed; right: 0; top: 40px; bottom: 30px; width: 250px;
+  background: rgba(30,30,30,0.95); border-left: 1px solid #444;
+  padding: 12px; overflow-y: auto; z-index: 101; color: #ddd; font-size: 12px;
+}
+.status-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; height: 30px;
+  background: rgba(30,30,30,0.95); display: flex; align-items: center;
+  padding: 0 12px; gap: 20px; border-top: 1px solid #444;
+  color: #aaa; font-size: 11px; font-family: monospace; z-index: 101;
+}
