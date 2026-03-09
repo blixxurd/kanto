@@ -257,6 +257,7 @@ def main():
     bottom_tiles = [0] * total
     top_tiles = [0] * total
     collision_grid = [0] * total
+    behavior_grid = [0] * total
 
     # Paste each map's tiles
     for map_id, pos in placed.items():
@@ -307,6 +308,12 @@ def main():
                             lt = attrs[local_id].get('layerType', 0)
                             if lt == 0 or lt == 2:  # NORMAL or SPLIT
                                 top_tiles[global_idx] = registry[top_key]['firstgid'] + local_id
+
+                    # Behavior: store metatile behavior ID for field effects
+                    if tileset_name in collision_data:
+                        attrs = collision_data[tileset_name]
+                        if local_id < len(attrs):
+                            behavior_grid[global_idx] = attrs[local_id]['behavior']
 
                     # Collision: use both map.bin collision bits and metatile behavior
                     is_blocked = coll != 0
@@ -470,6 +477,17 @@ def main():
                 'width': ow_w,
                 'height': ow_h,
                 'data': collision_grid,
+                'visible': False,
+                'opacity': 1,
+                'x': 0,
+                'y': 0,
+            },
+            {
+                'name': 'behavior',
+                'type': 'tilelayer',
+                'width': ow_w,
+                'height': ow_h,
+                'data': behavior_grid,
                 'visible': False,
                 'opacity': 1,
                 'x': 0,

@@ -132,6 +132,7 @@ def main():
         bottom_data = [0] * (w * h)
         top_data = [0] * (w * h)
         collision_data = [0] * (w * h)
+        behavior_data = [0] * (w * h)
 
         for idx, tile in enumerate(tiles):
             metatile_id = tile['metatileId']
@@ -160,6 +161,13 @@ def main():
                             lt = attrs[local_id].get('layerType', 0)
                             if lt == 0 or lt == 2:  # NORMAL or SPLIT
                                 top_data[idx] = tileset_firstgids[top_key] + local_id
+
+            # Behavior
+            dir_name_b = tileset_c_name_to_dir(ts_name) if ts_name else None
+            if dir_name_b:
+                attrs_b = get_collision(dir_name_b)
+                if attrs_b and local_id < len(attrs_b):
+                    behavior_data[idx] = attrs_b[local_id]['behavior']
 
             # Collision
             is_blocked = coll != 0
@@ -235,6 +243,17 @@ def main():
                     'width': w,
                     'height': h,
                     'data': collision_data,
+                    'visible': False,
+                    'opacity': 1,
+                    'x': 0,
+                    'y': 0,
+                },
+                {
+                    'name': 'behavior',
+                    'type': 'tilelayer',
+                    'width': w,
+                    'height': h,
+                    'data': behavior_data,
                     'visible': False,
                     'opacity': 1,
                     'x': 0,

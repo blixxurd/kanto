@@ -8,6 +8,7 @@ export class MapData {
   bottomTiles: Uint32Array;
   topTiles: Uint32Array;
   collisionGrid: Uint8Array;
+  behaviorGrid: Uint16Array;
   warps: Warp[];
   zones: Zone[];
 
@@ -18,6 +19,7 @@ export class MapData {
     this.bottomTiles = new Uint32Array(width * height);
     this.topTiles = new Uint32Array(width * height);
     this.collisionGrid = new Uint8Array(width * height);
+    this.behaviorGrid = new Uint16Array(width * height);
     this.warps = [];
     this.zones = [];
   }
@@ -35,6 +37,11 @@ export class MapData {
   isPassable(x: number, y: number): boolean {
     if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
     return this.collisionGrid[y * this.width + x] === 0;
+  }
+
+  getBehavior(x: number, y: number): number {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
+    return this.behaviorGrid[y * this.width + x];
   }
 
   getWarpAt(x: number, y: number): Warp | null {
@@ -70,6 +77,7 @@ export class MapData {
         if (tileLayer.name === 'bottom') map.bottomTiles = arr;
         else if (tileLayer.name === 'top') map.topTiles = arr;
         else if (tileLayer.name === 'collision') map.collisionGrid = new Uint8Array(tileLayer.data);
+        else if (tileLayer.name === 'behavior') map.behaviorGrid = new Uint16Array(tileLayer.data);
       } else if (layer.type === 'objectgroup') {
         const objLayer = layer as TiledObjectLayer;
         if (objLayer.name === 'warps') {

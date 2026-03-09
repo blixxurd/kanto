@@ -15,6 +15,8 @@ import { Player } from './entities/Player';
 import { PlayerController } from './entities/PlayerController';
 import { TileAnimator } from './world/TileAnimator';
 import { Editor } from './editor/Editor';
+import { GrassEffect } from './effects/GrassEffect';
+import { LandingDustEffect } from './effects/LandingDustEffect';
 import { TILE_SIZE } from './utils/TileCoords';
 
 export class Game {
@@ -37,6 +39,8 @@ export class Game {
   private player!: Player;
   private playerController!: PlayerController;
   private tileAnimator!: TileAnimator;
+  private grassEffect!: GrassEffect;
+  private landingDust!: LandingDustEffect;
   private editor!: Editor;
   private screenManager!: ScreenManager;
   private debugOverlay!: DebugOverlay;
@@ -99,6 +103,13 @@ export class Game {
     this.tileAnimator = new TileAnimator();
     await this.tileAnimator.load();
 
+    // Field effects
+    this.grassEffect = new GrassEffect(this.tilemapRenderer.entityLayer);
+    await this.grassEffect.load();
+    this.landingDust = new LandingDustEffect(this.tilemapRenderer.entityLayer);
+    await this.landingDust.load();
+    this.tilemapRenderer.entityLayer.sortableChildren = true;
+
     // Load overworld
     if (import.meta.env.DEV) console.log('Loading overworld...');
     await this.mapManager.init();
@@ -118,6 +129,13 @@ export class Game {
       console.warn('Failed to load player sprite:', e);
     }
     this.playerController = new PlayerController(this.player, this.input, this.collisionMap);
+    this.playerController.onStep = (tx, ty, mf) => this.grassEffect.onStep(tx, ty, mf);
+    this.playerController.onLand = (tx, ty) => {
+      this.landingDust.spawn(tx, ty);
+      // Also trigger grass effect on landing if landing in grass
+      this.grassEffect.onStep(tx, ty, 12);
+    };
+    this.grassEffect.setMap(activeMap);
 
     // Find a passable spawn point in Pallet Town
     const zones = await this.assetLoader.loadJSON<{ zones: Array<{ id: string; bounds: { x: number; y: number; width: number; height: number } }> }>('./data/overworld_zones.json');
@@ -140,6 +158,7 @@ export class Game {
       }
       this.player.setTilePosition(spawnX, spawnY);
       this.warpSystem.setPosition(spawnX, spawnY);
+      this.grassEffect.onSpawn(spawnX, spawnY);
     }
 
     // Camera follows player
@@ -152,6 +171,7 @@ export class Game {
     // Debug overlay (F3 to cycle: none → collision → zones → tile IDs)
     this.debugOverlay = new DebugOverlay(this.worldContainer, this.camera);
     this.debugOverlay.load(activeMap);
+    this.debugOverlay.attachTooltip(this.uiContainer);
     this.input.onKeyDown('F3', () => this.debugOverlay.toggle());
 
     // Editor
@@ -212,6 +232,8 @@ export class Game {
         this.playerController.update();
         this.camera.follow(this.player.getCenterPixel());
         this.camera.update();
+        this.grassEffect.update(this.player.tileX, this.player.tileY);
+        this.landingDust.update();
         this.warpSystem.check(this.player.tileX, this.player.tileY, this.player.direction);
         this.zoneSystem.update(this.player.tileX, this.player.tileY);
         break;
@@ -267,6 +289,8 @@ export class Game {
         this.collisionMap.load(activeMap);
         this.warpSystem.load(activeMap);
         this.zoneSystem.load(activeMap);
+        this.grassEffect.setMap(activeMap);
+        this.landingDust.clear();
         this.tilemapRenderer.loadMap(activeMap, this.mapManager.getTileTextures());
 
         // Position camera and render first tiles BEFORE async animation setup.

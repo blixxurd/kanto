@@ -41,6 +41,7 @@ src/world/CollisionMap.ts      — passability grid from collision layer
 src/world/WarpSystem.ts        — detects warps, triggers map transitions
 src/world/ZoneSystem.ts        — tracks current zone for music/encounters
 src/entities/PlayerController.ts — grid-locked movement with interpolation
+src/effects/GrassEffect.ts     — tall grass stepping overlay animation
 src/editor/Editor.ts           — in-game editor toggle and tool management
 src/editor/MapSerializer.ts    — exports MapData back to valid Tiled JSON
 ```

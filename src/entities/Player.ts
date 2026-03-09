@@ -13,9 +13,13 @@ export class Player {
   tileY = 0;
   pixelX = 0;
   pixelY = 0;
+  /** Vertical pixel offset during jumps (negative = up). */
+  jumpOffset = 0;
   direction: Direction = 'down';
   sprite: Sprite;
 
+  private shadow: Sprite;
+  private container: Container;
   private frameW = 16;
   private frameH = 32;
   private animations = new Map<string, AnimDef>();
@@ -25,6 +29,12 @@ export class Player {
   private textures: Texture[] = [];
 
   constructor(container: Container) {
+    this.container = container;
+    this.shadow = new Sprite();
+    this.shadow.anchor.set(0.5, 0.5);
+    this.shadow.visible = false;
+    container.addChild(this.shadow);
+
     this.sprite = new Sprite();
     this.sprite.anchor.set(0, 1);
     container.addChild(this.sprite);
@@ -59,6 +69,15 @@ export class Player {
     }
 
     this.playAnimation('idle_down');
+
+    // Load jump shadow
+    try {
+      const shadowTex = await Assets.load('./sprites/shadow_medium.png') as Texture;
+      shadowTex.source.scaleMode = 'nearest';
+      this.shadow.texture = shadowTex;
+    } catch {
+      // Shadow is optional
+    }
   }
 
   playAnimation(name: string): void {
@@ -103,7 +122,18 @@ export class Player {
 
   updateSpritePosition(): void {
     this.sprite.x = this.pixelX;
-    this.sprite.y = this.pixelY + TILE_SIZE;
+    this.sprite.y = this.pixelY + TILE_SIZE + this.jumpOffset;
+    // zIndex for depth sorting with grass/field effects (based on ground position, not visual)
+    this.sprite.zIndex = this.pixelY + TILE_SIZE;
+
+    // Shadow stays on the ground during jumps
+    const jumping = this.jumpOffset !== 0;
+    this.shadow.visible = jumping;
+    if (jumping) {
+      this.shadow.x = this.pixelX + TILE_SIZE / 2;
+      this.shadow.y = this.pixelY + TILE_SIZE;
+      this.shadow.zIndex = this.pixelY + TILE_SIZE - 1;
+    }
   }
 
   getCenterPixel(): { x: number; y: number } {

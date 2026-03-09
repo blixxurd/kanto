@@ -11,4 +11,9 @@ export class CollisionMap {
     if (!this.mapData) return false;
     return this.mapData.isPassable(x, y);
   }
+
+  getBehavior(x: number, y: number): number {
+    if (!this.mapData) return 0;
+    return this.mapData.getBehavior(x, y);
+  }
 }
