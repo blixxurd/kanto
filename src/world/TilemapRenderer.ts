@@ -20,7 +20,9 @@ export interface MergedSourceInfo {
 }
 
 export class TilemapRenderer {
+  /** The currently visible bottom layer (points to one of the double-buffer pair). */
   bottomLayer: CompositeTilemap;
+  /** The currently visible top layer. */
   topLayer: CompositeTilemap;
   readonly entityLayer = new Container();
 
@@ -34,8 +36,13 @@ export class TilemapRenderer {
   private lastViewRight = -1;
   private lastViewBottom = -1;
 
+  /** Double-buffer: two pairs of tilemaps, swap to avoid clear() flash. */
+  private buffers: Array<{ bottom: CompositeTilemap; top: CompositeTilemap }>;
+  private activeBuffer = 0;
+
   /** Exposed after loadMap: original source → merged source info */
   private _mergedSourceMap = new Map<TextureSource, MergedSourceInfo>();
+  private sourceList: TextureSource[] = [];
 
   /** Get the merged source info for an original TextureSource */
   getMergedSourceInfo(original: TextureSource): MergedSourceInfo | undefined {
@@ -44,11 +51,26 @@ export class TilemapRenderer {
 
   constructor(worldContainer: Container) {
     this.worldContainer = worldContainer;
-    this.bottomLayer = new CompositeTilemap();
-    this.topLayer = new CompositeTilemap();
-    worldContainer.addChild(this.bottomLayer);
+
+    // Create double-buffer pairs
+    this.buffers = [
+      { bottom: new CompositeTilemap(), top: new CompositeTilemap() },
+      { bottom: new CompositeTilemap(), top: new CompositeTilemap() },
+    ];
+
+    // Buffer 0 is initially active and visible
+    this.bottomLayer = this.buffers[0].bottom;
+    this.topLayer = this.buffers[0].top;
+
+    // Add both buffers to scene — inactive starts hidden
+    worldContainer.addChild(this.buffers[0].bottom);
+    worldContainer.addChild(this.buffers[1].bottom);
     worldContainer.addChild(this.entityLayer);
-    worldContainer.addChild(this.topLayer);
+    worldContainer.addChild(this.buffers[0].top);
+    worldContainer.addChild(this.buffers[1].top);
+
+    this.buffers[1].bottom.visible = false;
+    this.buffers[1].top.visible = false;
   }
 
   loadMap(mapData: MapData, tileTextures: Map<number, Texture>): void {
@@ -57,17 +79,26 @@ export class TilemapRenderer {
     this.lastViewLeft = -1;
 
     // Destroy old tilemaps and create fresh ones to avoid stale GPU state
-    const bottomIdx = this.worldContainer.getChildIndex(this.bottomLayer);
-    const topIdx = this.worldContainer.getChildIndex(this.topLayer);
-    this.worldContainer.removeChild(this.bottomLayer);
-    this.worldContainer.removeChild(this.topLayer);
-    this.bottomLayer.destroy();
-    this.topLayer.destroy();
+    for (const buf of this.buffers) {
+      const bottomIdx = this.worldContainer.getChildIndex(buf.bottom);
+      const topIdx = this.worldContainer.getChildIndex(buf.top);
+      this.worldContainer.removeChild(buf.bottom);
+      this.worldContainer.removeChild(buf.top);
+      buf.bottom.destroy();
+      buf.top.destroy();
 
-    this.bottomLayer = new CompositeTilemap();
-    this.topLayer = new CompositeTilemap();
-    this.worldContainer.addChildAt(this.bottomLayer, bottomIdx);
-    this.worldContainer.addChildAt(this.topLayer, topIdx);
+      buf.bottom = new CompositeTilemap();
+      buf.top = new CompositeTilemap();
+      this.worldContainer.addChildAt(buf.bottom, bottomIdx);
+      this.worldContainer.addChildAt(buf.top, topIdx);
+    }
+
+    // Buffer 0 active, buffer 1 hidden
+    this.activeBuffer = 0;
+    this.bottomLayer = this.buffers[0].bottom;
+    this.topLayer = this.buffers[0].top;
+    this.buffers[1].bottom.visible = false;
+    this.buffers[1].top.visible = false;
 
     // Collect unique TextureSources
     const allSources: TextureSource[] = [];
@@ -79,19 +110,18 @@ export class TilemapRenderer {
       }
     }
 
-    let sourceList: TextureSource[];
     let sourceIndexMap: Map<TextureSource, number>;
     let vOffsetMap: Map<TextureSource, number>;
 
     if (allSources.length > 16) {
       // Merge pairs to reduce source count below TEXTURES_PER_TILEMAP limit
       const merged = this.mergeSources(allSources);
-      sourceList = merged.sourceList;
+      this.sourceList = merged.sourceList;
       sourceIndexMap = merged.sourceIndexMap;
       vOffsetMap = merged.vOffsetMap;
     } else {
       // Use sources directly (all are already canvas-backed from AssetLoader)
-      sourceList = allSources;
+      this.sourceList = allSources;
       sourceIndexMap = new Map();
       vOffsetMap = new Map();
       this._mergedSourceMap.clear();
@@ -101,9 +131,11 @@ export class TilemapRenderer {
       }
     }
 
-    // Pre-register all sources with CompositeTilemap
-    this.bottomLayer.tileset(sourceList);
-    this.topLayer.tileset(sourceList);
+    // Pre-register all sources with both buffer pairs
+    for (const buf of this.buffers) {
+      buf.bottom.tileset(this.sourceList);
+      buf.top.tileset(this.sourceList);
+    }
 
     // Build TileInfo cache for fast rendering
     this.tileInfoCache.clear();
@@ -119,7 +151,7 @@ export class TilemapRenderer {
       });
     }
 
-    if (import.meta.env.DEV) console.log(`TilemapRenderer: loaded ${tileTextures.size} tiles, ${sourceList.length} unique sources (from ${allSources.length} original)`);
+    if (import.meta.env.DEV) console.log(`TilemapRenderer: loaded ${tileTextures.size} tiles, ${this.sourceList.length} unique sources (from ${allSources.length} original)`);
   }
 
   /**
@@ -205,8 +237,13 @@ export class TilemapRenderer {
     this.lastViewRight = right;
     this.lastViewBottom = bottom;
 
-    this.bottomLayer.clear();
-    this.topLayer.clear();
+    // Double-buffer: draw into the INACTIVE buffer, then swap.
+    // The active buffer stays visible until the new one is fully populated.
+    const nextIdx = 1 - this.activeBuffer;
+    const next = this.buffers[nextIdx];
+
+    next.bottom.clear();
+    next.top.clear();
 
     for (let y = top; y < bottom; y++) {
       for (let x = left; x < right; x++) {
@@ -214,7 +251,7 @@ export class TilemapRenderer {
         if (bottomGid > 0) {
           const info = this.tileInfoCache.get(bottomGid);
           if (info) {
-            this.bottomLayer.tile(info.sourceIndex, x * TILE_SIZE, y * TILE_SIZE, {
+            next.bottom.tile(info.sourceIndex, x * TILE_SIZE, y * TILE_SIZE, {
               u: info.u,
               v: info.v,
               tileWidth: info.tileWidth,
@@ -227,7 +264,7 @@ export class TilemapRenderer {
         if (topGid > 0) {
           const info = this.tileInfoCache.get(topGid);
           if (info) {
-            this.topLayer.tile(info.sourceIndex, x * TILE_SIZE, y * TILE_SIZE, {
+            next.top.tile(info.sourceIndex, x * TILE_SIZE, y * TILE_SIZE, {
               u: info.u,
               v: info.v,
               tileWidth: info.tileWidth,
@@ -237,6 +274,17 @@ export class TilemapRenderer {
         }
       }
     }
+
+    // Swap: show new buffer, hide old one
+    const prev = this.buffers[this.activeBuffer];
+    next.bottom.visible = true;
+    next.top.visible = true;
+    prev.bottom.visible = false;
+    prev.top.visible = false;
+
+    this.activeBuffer = nextIdx;
+    this.bottomLayer = next.bottom;
+    this.topLayer = next.top;
   }
 
   refreshAll(): void {
