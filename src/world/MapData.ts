@@ -11,6 +11,10 @@ export class MapData {
   behaviorGrid: Uint16Array;
   warps: Warp[];
   zones: Zone[];
+  /** Tileset firstgid values from the Tiled JSON, for GID → metatile ID mapping. */
+  tilesetFirstGids: number[] = [];
+  /** Tileset source filenames (e.g. 'general.tsj', 'pallet_town.tsj'), parallel to tilesetFirstGids. */
+  tilesetSources: string[] = [];
 
   constructor(id: string, width: number, height: number) {
     this.id = id;
@@ -69,6 +73,8 @@ export class MapData {
 
   static fromTiledJSON(json: TiledMap, id = 'unknown'): MapData {
     const map = new MapData(id, json.width, json.height);
+    map.tilesetFirstGids = (json.tilesets || []).map((ts: any) => ts.firstgid);
+    map.tilesetSources = (json.tilesets || []).map((ts: any) => ts.source ?? '');
 
     for (const layer of json.layers) {
       if (layer.type === 'tilelayer') {

@@ -81,6 +81,20 @@ def main():
             'tiles': tiles,
         }
 
+        # Extract border pattern
+        border_path_str = layout.get('border_filepath', '')
+        border_w = layout.get('border_width', 0)
+        border_h = layout.get('border_height', 0)
+        if border_path_str and border_w > 0 and border_h > 0:
+            border_bin_path = DECOMP_DIR / border_path_str
+            if border_bin_path.exists():
+                border_data = border_bin_path.read_bytes()
+                expected_border = border_w * border_h * 2
+                if len(border_data) >= expected_border:
+                    output['borderWidth'] = border_w
+                    output['borderHeight'] = border_h
+                    output['borderTiles'] = parse_map_bin(border_data, border_w, border_h)
+
         # Use layout name (without _Layout suffix) as filename
         name = layout.get('name', layout_id).replace('_Layout', '')
         out_path = output_dir / f"{name}.json"

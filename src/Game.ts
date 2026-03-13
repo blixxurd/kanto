@@ -1,5 +1,6 @@
 import { Application, Container, Text } from 'pixi.js';
-import type { GameState, Warp } from './types/game';
+import type { GameState, WarpEvent } from './types/game';
+import type { FadeColor } from './core/TransitionEffect';
 import { Input } from './core/Input';
 import { Camera } from './core/Camera';
 import { AssetLoader } from './core/AssetLoader';
@@ -11,6 +12,7 @@ import { MapManager } from './world/MapManager';
 import { CollisionMap } from './world/CollisionMap';
 import { WarpSystem } from './world/WarpSystem';
 import { ZoneSystem } from './world/ZoneSystem';
+import { DoorAnimator } from './world/DoorAnimator';
 import { Player } from './entities/Player';
 import { PlayerController } from './entities/PlayerController';
 import { TileAnimator } from './world/TileAnimator';
@@ -41,6 +43,7 @@ export class Game {
   private tileAnimator!: TileAnimator;
   private grassEffect!: GrassEffect;
   private landingDust!: LandingDustEffect;
+  private doorAnimator!: DoorAnimator;
   private editor!: Editor;
   private screenManager!: ScreenManager;
   private debugOverlay!: DebugOverlay;
@@ -109,6 +112,10 @@ export class Game {
     this.landingDust = new LandingDustEffect(this.tilemapRenderer.entityLayer);
     await this.landingDust.load();
     this.tilemapRenderer.entityLayer.sortableChildren = true;
+
+    // Door animations
+    this.doorAnimator = new DoorAnimator(this.tilemapRenderer.entityLayer);
+    await this.doorAnimator.load();
 
     // Load overworld
     if (import.meta.env.DEV) console.log('Loading overworld...');
@@ -188,7 +195,7 @@ export class Game {
     });
 
     // Warp handler
-    this.warpSystem.onWarp.on((warp) => this.handleWarp(warp));
+    this.warpSystem.onWarp.on((event) => this.handleWarp(event));
 
     // Zone change handler
     this.zoneSystem.onZoneChange.on(({ to }) => {
@@ -222,26 +229,57 @@ export class Game {
           if (res) this.screenManager.setTargetResolution(res.width, res.height);
         },
         toggleDebug: () => this.debugOverlay.toggle(),
+        getInputState: () => ({
+          direction: this.input.getDirection(),
+          holding: this.input.isHoldingDirection(),
+          running: this.input.isRunning(),
+        }),
       };
     }
   }
 
   private update(): void {
     switch (this.state) {
-      case 'playing':
-        this.playerController.update();
+      case 'playing': {
+        // Phase 1: Complete in-progress movement (may set tookStep)
+        this.playerController.updateMovement();
+
+        // Phase 2: Check warps — runs BEFORE new movement starts.
+        // This matches GBA: ProcessPlayerFieldInput checks warps then movement.
+        // Update facing direction when idle so warp checks see the correct direction.
+        if (!this.playerController.isMoving()) {
+          const dir = this.input.getDirection();
+          if (dir) this.playerController.setFacing(dir);
+        }
+        this.warpSystem.check(
+          this.player.tileX,
+          this.player.tileY,
+          this.player.direction,
+          this.input.isHoldingDirection(),
+          this.playerController.tookStep,
+        );
+
+        // Phase 3: Start new movement (only if no warp fired)
+        if (this.state === 'playing') {
+          this.playerController.tryStartMove();
+        }
+
         this.camera.follow(this.player.getCenterPixel());
         this.camera.update();
         this.grassEffect.update(this.player.tileX, this.player.tileY);
         this.landingDust.update();
-        this.warpSystem.check(this.player.tileX, this.player.tileY, this.player.direction);
         this.zoneSystem.update(this.player.tileX, this.player.tileY);
         break;
+      }
       case 'editor':
         this.editor.update();
         this.camera.update();
         break;
       case 'transitioning':
+        // Transition update is driven by the main loop.
+        // Camera and effects keep running so door walk animations render properly.
+        this.camera.follow(this.player.getCenterPixel());
+        this.camera.update();
         this.transition.update();
         break;
     }
@@ -277,54 +315,218 @@ export class Game {
     );
   }
 
-  private async handleWarp(warp: Warp): Promise<void> {
+  private async handleWarp(event: WarpEvent): Promise<void> {
     if (this.state === 'transitioning') return;
     this.state = 'transitioning';
 
-    this.transition.fadeOut(0.3, async () => {
-      try {
-        const spawnPos = await this.mapManager.followWarp(warp.destMap, warp.destWarpId);
+    const { warp, warpType } = event;
 
-        const activeMap = this.mapManager.getActiveMap()!;
-        this.collisionMap.load(activeMap);
-        this.warpSystem.load(activeMap);
-        this.zoneSystem.load(activeMap);
-        this.grassEffect.setMap(activeMap);
-        this.landingDust.clear();
-        this.tilemapRenderer.loadMap(activeMap, this.mapManager.getTileTextures());
+    // Determine fade color based on transition direction:
+    // Entering indoors (overworld → interior): fade to black
+    // Exiting outdoors (interior → overworld): fade to white
+    const isExitingToOverworld = this.mapManager.getActiveMode() === 'interior';
+    const fadeColor: FadeColor = isExitingToOverworld ? 'white' : 'black';
 
-        // Position camera and render first tiles BEFORE async animation setup.
-        // This ensures pixi-tilemap sees non-empty tile buffers on the first render
-        // frame, preventing it from caching the tilemap as invalid (is_valid=false).
-        this.player.setTilePosition(spawnPos.x, spawnPos.y);
-        this.camera.follow(this.player.getCenterPixel());
-        this.camera.clampToBounds(activeMap.width * TILE_SIZE, activeMap.height * TILE_SIZE);
-        this.camera.panTo(
-          spawnPos.x * TILE_SIZE + TILE_SIZE / 2,
-          spawnPos.y * TILE_SIZE + TILE_SIZE / 2,
-        );
-        this.camera.update();
-        this.tilemapRenderer.refreshAll();
-        const vp = this.camera.getViewport();
-        this.tilemapRenderer.renderViewport(
-          this.camera.x, this.camera.y,
-          vp.right - vp.left, vp.bottom - vp.top,
-        );
+    try {
+      if (warpType === 'door') {
+        await this.handleDoorWarp(warp, fadeColor);
+      } else {
+        await this.handleStandardWarp(warp, fadeColor);
+      }
+    } catch (e) {
+      console.error('Warp failed:', e);
+      this.transition.fadeIn(0.3, () => {
+        this.state = 'playing';
+      }, fadeColor);
+    }
+  }
 
-        await this.setupAnimations();
-        this.debugOverlay.load(activeMap);
+  /**
+   * Door warp ENTRY sequence (matching GBA Task_DoorWarp from field_fadetransition.c):
+   * Player is one tile south of the door, facing north.
+   *
+   * 1. Open door at warp tile
+   * 2. Player walks 1 tile north (onto the door tile)
+   * 3. Hide player
+   * 4. Close door
+   * 5. Fade to black
+   * 6. Load destination map
+   * 7. Fade in
+   */
+  private async handleDoorWarp(warp: { destMap: string; destWarpId: number; x: number; y: number }, fadeColor: FadeColor): Promise<void> {
+    const activeMap = this.mapManager.getActiveMap()!;
+    const doorX = warp.x;
+    const doorY = warp.y;
+    const doorGid = activeMap.getBottomTile(doorX, doorY);
 
-        this.transition.fadeIn(0.3, () => {
-          this.state = 'playing';
-          // Tell warp system we're already on this tile so it won't re-trigger
-          this.warpSystem.setPosition(spawnPos.x, spawnPos.y);
-        });
-      } catch (e) {
-        console.error('Warp failed:', e);
-        this.transition.fadeIn(0.3, () => {
-          this.state = 'playing';
-        });
+    // 1. Open door
+    await this.doorAnimator.playOpen(doorX, doorY, doorGid, activeMap);
+
+    // 2. Walk player 1 tile north onto the door tile
+    await this.animatePlayerWalk('up', 12);
+
+    // 3. Hide player (they're behind the door now)
+    this.player.setVisible(false);
+
+    // 4. Close door
+    await this.doorAnimator.playClose(doorX, doorY, doorGid, activeMap);
+
+    // 5. Fade to black
+    await this.fadeAsync('out', 0.3, fadeColor);
+
+    // 6. Load destination map
+    await this.loadWarpDestination(warp.destMap, warp.destWarpId, warp.x, warp.y);
+
+    // 7. Show player + fade in
+    this.player.setVisible(true);
+    await this.fadeAsync('in', 0.3, fadeColor);
+
+    this.state = 'playing';
+  }
+
+  /**
+   * Standard warp sequence (ladder, cave, arrow, regular, stair, etc):
+   * 1. Fade out
+   * 2. Load destination map
+   * 3. Fade in
+   * 4. If exiting to overworld at a door tile: play exit door animation
+   */
+  private async handleStandardWarp(warp: { destMap: string; destWarpId: number; x: number; y: number }, fadeColor: FadeColor): Promise<void> {
+    const wasInterior = this.mapManager.getActiveMode() === 'interior';
+
+    await this.fadeAsync('out', 0.3, fadeColor);
+    await this.loadWarpDestination(warp.destMap, warp.destWarpId, warp.x, warp.y);
+
+    // Check if we landed on a door tile (exiting interior to overworld)
+    const activeMap = this.mapManager.getActiveMap()!;
+    const doorBehavior = activeMap.getBehavior(this.player.tileX, this.player.tileY);
+    const isDoorExit = wasInterior && doorBehavior === 0x69;
+
+    if (isDoorExit) {
+      // GBA exit sequence: fade in → wait → door opens → player walks south → door closes
+      const doorX = this.player.tileX;
+      const doorY = this.player.tileY;
+      const doorGid = activeMap.getBottomTile(doorX, doorY);
+
+      this.player.setVisible(false);
+      this.player.direction = 'down';
+      await this.fadeAsync('in', 0.3, fadeColor);
+
+      // Brief pause before door opens (GBA waits ~25 frames)
+      await this.waitFrames(15);
+
+      await this.doorAnimator.playOpen(doorX, doorY, doorGid, activeMap);
+
+      // Show player and walk south out of door
+      this.player.setVisible(true);
+      await this.animatePlayerWalk('down', 12);
+
+      // Animate door closing after player walks out
+      await this.doorAnimator.playClose(doorX, doorY, doorGid, activeMap);
+
+      // Update warp system position so it doesn't re-trigger
+      this.warpSystem.setPosition(this.player.tileX, this.player.tileY);
+    } else {
+      await this.fadeAsync('in', 0.3, fadeColor);
+    }
+
+    this.state = 'playing';
+  }
+
+  /** Animate the player walking one tile in a direction. */
+  private animatePlayerWalk(direction: 'up' | 'down' | 'left' | 'right', frames: number): Promise<void> {
+    return new Promise(resolve => {
+      const dx = direction === 'left' ? -1 : direction === 'right' ? 1 : 0;
+      const dy = direction === 'up' ? -1 : direction === 'down' ? 1 : 0;
+      const startX = this.player.pixelX;
+      const startY = this.player.pixelY;
+      const targetX = startX + dx * TILE_SIZE;
+      const targetY = startY + dy * TILE_SIZE;
+      let progress = 0;
+
+      this.player.direction = direction;
+      this.player.playAnimation(`walk_${direction}`);
+
+      const step = () => {
+        progress++;
+        const t = Math.min(1, progress / frames);
+        this.player.pixelX = startX + (targetX - startX) * t;
+        this.player.pixelY = startY + (targetY - startY) * t;
+        this.player.updateSpritePosition();
+        this.player.updateAnimation();
+
+        if (t >= 1) {
+          this.player.tileX += dx;
+          this.player.tileY += dy;
+          this.player.pixelX = targetX;
+          this.player.pixelY = targetY;
+          this.player.updateSpritePosition();
+          this.player.playAnimation(`idle_${direction}`);
+          resolve();
+          return;
+        }
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  /** Wait a number of animation frames. */
+  private waitFrames(count: number): Promise<void> {
+    return new Promise(resolve => {
+      let n = 0;
+      const tick = () => {
+        if (++n >= count) { resolve(); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  /** Promise wrapper for fade transitions. Updated by main loop's 'transitioning' state. */
+  private fadeAsync(direction: 'in' | 'out', duration: number, color: FadeColor): Promise<void> {
+    return new Promise(resolve => {
+      if (direction === 'out') {
+        this.transition.fadeOut(duration, resolve, color);
+      } else {
+        this.transition.fadeIn(duration, resolve, color);
       }
     });
+  }
+
+  /** Load destination map and set up player position. */
+  private async loadWarpDestination(destMap: string, destWarpId: number, sourceX?: number, sourceY?: number): Promise<void> {
+    const spawnPos = await this.mapManager.followWarp(destMap, destWarpId, sourceX, sourceY);
+
+    const activeMap = this.mapManager.getActiveMap()!;
+    this.collisionMap.load(activeMap);
+    this.warpSystem.load(activeMap);
+    this.zoneSystem.load(activeMap);
+    this.grassEffect.setMap(activeMap);
+    this.landingDust.clear();
+    this.doorAnimator.clear();
+    this.tilemapRenderer.loadMap(activeMap, this.mapManager.getTileTextures());
+
+    // Position camera and render first tiles BEFORE async animation setup.
+    this.player.setTilePosition(spawnPos.x, spawnPos.y);
+    this.camera.follow(this.player.getCenterPixel());
+    this.camera.clampToBounds(activeMap.width * TILE_SIZE, activeMap.height * TILE_SIZE);
+    this.camera.panTo(
+      spawnPos.x * TILE_SIZE + TILE_SIZE / 2,
+      spawnPos.y * TILE_SIZE + TILE_SIZE / 2,
+    );
+    this.camera.update();
+    this.tilemapRenderer.refreshAll();
+    const vp = this.camera.getViewport();
+    this.tilemapRenderer.renderViewport(
+      this.camera.x, this.camera.y,
+      vp.right - vp.left, vp.bottom - vp.top,
+    );
+
+    await this.setupAnimations();
+    this.debugOverlay.load(activeMap);
+
+    // Tell warp system we're already on this tile so it won't re-trigger
+    this.warpSystem.setPosition(spawnPos.x, spawnPos.y);
   }
 }

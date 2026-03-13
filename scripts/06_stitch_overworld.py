@@ -227,7 +227,7 @@ def main():
         sys.exit(1)
 
     # Normalize coordinates so minimum is at (0,0) with padding
-    pad = 2
+    pad = 8
     min_x = min(p['x'] for p in placed.values()) - pad
     min_y = min(p['y'] for p in placed.values()) - pad
     max_x = max(p['x'] + p['w'] for p in placed.values()) + pad
@@ -323,10 +323,87 @@ def main():
                             is_blocked = not attrs[local_id]['passable']
                     collision_grid[global_idx] = 1 if is_blocked else 0
 
-    # Mark empty cells (no tile data) as blocked
+    # Fill empty cells with border tiles from nearest map via multi-source BFS
+    # 1. Build ownership grid: which map "owns" each cell
+    ownership = [None] * total  # map_id or None
+    bfs_queue = deque()
+
+    # Seed BFS with all cells that belong to placed maps
+    for map_id, pos in placed.items():
+        for ly in range(pos['h']):
+            for lx in range(pos['w']):
+                gx = pos['x'] + lx
+                gy = pos['y'] + ly
+                idx = gy * ow_w + gx
+                if 0 <= idx < total:
+                    ownership[idx] = map_id
+                    # Only enqueue edge cells (they can expand outward)
+                    if lx == 0 or lx == pos['w'] - 1 or ly == 0 or ly == pos['h'] - 1:
+                        bfs_queue.append((gx, gy))
+
+    # Expand outward — each empty cell gets the map_id of the nearest placed cell
+    while bfs_queue:
+        cx, cy = bfs_queue.popleft()
+        c_owner = ownership[cy * ow_w + cx]
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = cx + dx, cy + dy
+            if 0 <= nx < ow_w and 0 <= ny < ow_h:
+                nidx = ny * ow_w + nx
+                if ownership[nidx] is None:
+                    ownership[nidx] = c_owner
+                    bfs_queue.append((nx, ny))
+
+    # 2. Fill empty cells with border pattern from their owner map
+    border_fill_count = 0
+    for i in range(total):
+        if bottom_tiles[i] != 0:
+            continue  # Already has map data
+
+        owner = ownership[i]
+        if not owner:
+            collision_grid[i] = 1
+            continue
+
+        layout = layouts.get(placed[owner]['layout_id'])
+        if not layout or 'borderTiles' not in layout:
+            collision_grid[i] = 1
+            continue
+
+        border_w = layout['borderWidth']
+        border_h = layout['borderHeight']
+        border_tiles = layout['borderTiles']
+        primary = layout.get('primaryTileset', '')
+        secondary = layout.get('secondaryTileset', '')
+
+        # Compute which border tile to use via modulo
+        gx = i % ow_w
+        gy = i // ow_w
+        bx = gx % border_w
+        by = gy % border_h
+        bt = border_tiles[by * border_w + bx]
+        metatile_id = bt['metatileId']
+
+        # Convert metatile ID to GID
+        if metatile_id < NUM_TILES_IN_PRIMARY:
+            tileset_name = primary
+            local_id = metatile_id
+        else:
+            tileset_name = secondary
+            local_id = metatile_id - NUM_TILES_IN_PRIMARY
+
+        if tileset_name in registry:
+            bottom_tiles[i] = registry[tileset_name]['firstgid'] + local_id
+            border_fill_count += 1
+
+        # Border tiles are always blocked
+        collision_grid[i] = 1
+
+    # Any remaining empty cells (no owner) are blocked
     for i in range(total):
         if bottom_tiles[i] == 0:
             collision_grid[i] = 1
+
+    print(f"  Filled {border_fill_count} border tiles")
 
     # Build warp objects for overworld
     overworld_warps = []

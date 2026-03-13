@@ -65,19 +65,29 @@ export class MapManager {
 
   /**
    * Follow a warp to its destination. Works from any source map to any destination.
-   * The triggering warp object tells us which warp index was stepped on.
+   * @param sourceX Tile X where the warp was triggered (used to identify which warp was stepped on)
+   * @param sourceY Tile Y where the warp was triggered
    */
-  async followWarp(destMap: string, destWarpId: number): Promise<{ x: number; y: number }> {
+  async followWarp(destMap: string, destWarpId: number, sourceX?: number, sourceY?: number): Promise<{ x: number; y: number }> {
     // If we're in an interior, find which warp index we stepped on
     // so we can look up the correct overworld return point
     if (this.activeMode === 'interior' && this.currentInterior && this.warpTable) {
       const interiorId = this.currentInterior.id;
       const returns = this.warpTable.interiorReturns[interiorId];
       if (returns) {
-        // Find the warp index we stepped on by matching destMap + destWarpId
-        const steppedWarpIdx = this.currentInterior.warps.findIndex(
-          w => w.destMap === destMap && w.destWarpId === destWarpId
-        );
+        // Find the exact warp by matching source tile position
+        let steppedWarpIdx = -1;
+        if (sourceX !== undefined && sourceY !== undefined) {
+          steppedWarpIdx = this.currentInterior.warps.findIndex(
+            w => w.x === sourceX && w.y === sourceY
+          );
+        }
+        // Fallback to matching by destination (less reliable with duplicates)
+        if (steppedWarpIdx < 0) {
+          steppedWarpIdx = this.currentInterior.warps.findIndex(
+            w => w.destMap === destMap && w.destWarpId === destWarpId
+          );
+        }
         if (steppedWarpIdx >= 0) {
           const ret = returns.find(r => r.warpId === steppedWarpIdx);
           if (ret) {
@@ -97,11 +107,7 @@ export class MapManager {
     this.currentInteriorTilesets = null;
     this.activeMode = 'overworld';
 
-    // Spawn one tile south of the door
-    const spawnY = returnY + 1;
-    if (this.overworldData!.isPassable(returnX, spawnY)) {
-      return { x: returnX, y: spawnY };
-    }
+    // Spawn at the door tile. The exit door animation walks the player south.
     return { x: returnX, y: returnY };
   }
 
@@ -123,13 +129,10 @@ export class MapManager {
     this.tileTextures = await this.assetLoader.loadTilesets(mapJson.tilesets, './tilesets');
     this.activeMode = 'interior';
 
-    // Spawn one tile north of the warp (into the room)
+    // Spawn at the destination warp position.
+    // The entry mat tile has behavior 0x00 which won't re-trigger a warp.
     const warp = this.currentInterior.warps[destWarpId];
     if (!warp) return { x: 1, y: 1 };
-    const spawnY = warp.y - 1;
-    if (spawnY >= 0 && this.currentInterior.isPassable(warp.x, spawnY)) {
-      return { x: warp.x, y: spawnY };
-    }
     return { x: warp.x, y: warp.y };
   }
 }

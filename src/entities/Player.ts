@@ -136,6 +136,10 @@ export class Player {
     }
   }
 
+  setVisible(visible: boolean): void {
+    this.sprite.visible = visible;
+  }
+
   getCenterPixel(): { x: number; y: number } {
     return {
       x: this.pixelX + TILE_SIZE / 2,

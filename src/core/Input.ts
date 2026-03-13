@@ -45,6 +45,14 @@ export class Input {
     return this.keys.has('Shift');
   }
 
+  /** Returns true if any direction key is currently held. */
+  isHoldingDirection(): boolean {
+    for (const key of Object.keys(DIRECTION_KEYS)) {
+      if (this.keys.has(key)) return true;
+    }
+    return false;
+  }
+
   onKeyDown(key: string, callback: () => void): void {
     if (!this.callbacks.has(key)) this.callbacks.set(key, []);
     this.callbacks.get(key)!.push(callback);

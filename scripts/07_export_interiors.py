@@ -128,15 +128,33 @@ def main():
         if not tiled_tilesets:
             continue
 
-        # Build tile layers
-        bottom_data = [0] * (w * h)
-        top_data = [0] * (w * h)
-        collision_data = [0] * (w * h)
-        behavior_data = [0] * (w * h)
+        # Expand map with border margin
+        border_margin = 4
+        has_border = 'borderTiles' in layout
+        if has_border:
+            ew = w + border_margin * 2
+            eh = h + border_margin * 2
+        else:
+            ew = w
+            eh = h
+            border_margin = 0  # No expansion if no border data
+
+        # Build tile layers (expanded size)
+        bottom_data = [0] * (ew * eh)
+        top_data = [0] * (ew * eh)
+        collision_data = [0] * (ew * eh)
+        behavior_data = [0] * (ew * eh)
 
         for idx, tile in enumerate(tiles):
             metatile_id = tile['metatileId']
             coll = tile['collision']
+
+            # Map local coords to expanded coords
+            lx = idx % w
+            ly = idx // w
+            ex = lx + border_margin
+            ey = ly + border_margin
+            eidx = ey * ew + ex
 
             # FireRed: NUM_TILES_IN_PRIMARY=640
             if metatile_id < 640:
@@ -147,7 +165,7 @@ def main():
                 local_id = metatile_id - 640
 
             if ts_name in tileset_firstgids:
-                bottom_data[idx] = tileset_firstgids[ts_name] + local_id
+                bottom_data[eidx] = tileset_firstgids[ts_name] + local_id
 
                 # Top layer: metatiles with layerType=0 (NORMAL) or 2 (SPLIT)
                 # have their top tiles rendered OVER sprites.
@@ -160,14 +178,14 @@ def main():
                         if attrs and local_id < len(attrs):
                             lt = attrs[local_id].get('layerType', 0)
                             if lt == 0 or lt == 2:  # NORMAL or SPLIT
-                                top_data[idx] = tileset_firstgids[top_key] + local_id
+                                top_data[eidx] = tileset_firstgids[top_key] + local_id
 
             # Behavior
             dir_name_b = tileset_c_name_to_dir(ts_name) if ts_name else None
             if dir_name_b:
                 attrs_b = get_collision(dir_name_b)
                 if attrs_b and local_id < len(attrs_b):
-                    behavior_data[idx] = attrs_b[local_id]['behavior']
+                    behavior_data[eidx] = attrs_b[local_id]['behavior']
 
             # Collision
             is_blocked = coll != 0
@@ -177,7 +195,44 @@ def main():
                     attrs = get_collision(dir_name)
                     if attrs and local_id < len(attrs):
                         is_blocked = not attrs[local_id]['passable']
-            collision_data[idx] = 1 if is_blocked else 0
+            collision_data[eidx] = 1 if is_blocked else 0
+
+        # Fill border margin with border tiles
+        if has_border:
+            border_w = layout['borderWidth']
+            border_h = layout['borderHeight']
+            border_tiles = layout['borderTiles']
+
+            for ey in range(eh):
+                for ex in range(ew):
+                    eidx = ey * ew + ex
+                    if bottom_data[eidx] != 0:
+                        continue  # Already has map data
+
+                    bx = ex % border_w
+                    by = ey % border_h
+                    bt = border_tiles[by * border_w + bx]
+                    mid = bt['metatileId']
+
+                    if mid < 640:
+                        ts_name = primary
+                        local_id = mid
+                    else:
+                        ts_name = secondary
+                        local_id = mid - 640
+
+                    if ts_name in tileset_firstgids:
+                        bottom_data[eidx] = tileset_firstgids[ts_name] + local_id
+                    collision_data[eidx] = 1  # Border always blocked
+
+        # Mark any remaining empty cells as blocked
+        for i in range(ew * eh):
+            if bottom_data[i] == 0:
+                collision_data[i] = 1
+
+        # Use expanded dimensions for the rest
+        w = ew
+        h = eh
 
         # Build warp objects
         map_warps = warps.get(map_id, [])
@@ -194,8 +249,8 @@ def main():
                 'id': i + 1,
                 'name': warp.get('destMap', ''),
                 'type': 'warp',
-                'x': warp['x'] * 16,
-                'y': warp['y'] * 16,
+                'x': (warp['x'] + border_margin) * 16,
+                'y': (warp['y'] + border_margin) * 16,
                 'width': 16,
                 'height': 16,
                 'properties': [

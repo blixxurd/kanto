@@ -36,6 +36,8 @@ export class PlayerController {
   onStep: ((tileX: number, tileY: number, moveFrames: number) => void) | null = null;
   /** Called when the player lands from a ledge jump. */
   onLand: ((tileX: number, tileY: number) => void) | null = null;
+  /** Set to true on the frame the player completes a tile move. */
+  tookStep = false;
 
   constructor(
     private player: Player,
@@ -43,17 +45,39 @@ export class PlayerController {
     private collision: CollisionMap,
   ) {}
 
-  update(): void {
+  /**
+   * Phase 1: Advance in-progress movement animations.
+   * Sets tookStep when a move completes. Does NOT start new movement.
+   * Call this, then run warp checks, then call tryStartMove().
+   */
+  updateMovement(): void {
+    this.tookStep = false;
     if (this.state === 'moving') {
       this.updateMove();
     } else if (this.state === 'jumping') {
       this.updateJump();
-    } else {
-      const dir = this.input.getDirection();
-      if (dir) {
-        this.tryMove(dir);
-      }
     }
+  }
+
+  /**
+   * Phase 2: Start new movement from input if player is idle.
+   * Call AFTER warp checks so warps can preempt movement.
+   */
+  tryStartMove(): void {
+    if (this.state !== 'idle') return;
+    const dir = this.input.getDirection();
+    if (dir) {
+      this.tryMove(dir);
+    }
+  }
+
+  /**
+   * Set player facing direction without starting movement.
+   * Used when a warp preempts input (e.g. player presses UP on door tile).
+   * Does NOT change the animation — tryStartMove handles that.
+   */
+  setFacing(dir: Direction): void {
+    this.player.direction = dir;
   }
 
   private updateMove(): void {
@@ -95,11 +119,11 @@ export class PlayerController {
     this.player.pixelY = this.targetY;
     this.player.updateSpritePosition();
     this.state = 'idle';
+    this.tookStep = true;
 
-    const dir = this.input.getDirection();
-    if (dir) {
-      this.tryMove(dir);
-    } else {
+    // Don't start new movement here — let the game loop check warps first.
+    // If no warp fires, tryStartMove() will initiate the next step.
+    if (!this.input.getDirection()) {
       this.player.playAnimation(`idle_${this.player.direction}`);
     }
   }
@@ -112,6 +136,7 @@ export class PlayerController {
     this.player.jumpOffset = 0;
     this.player.updateSpritePosition();
     this.state = 'idle';
+    this.tookStep = true;
     this.onLand?.(this.player.tileX, this.player.tileY);
 
     this.player.playAnimation(`idle_${this.player.direction}`);
