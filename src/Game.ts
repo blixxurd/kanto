@@ -164,7 +164,7 @@ export class Game {
         }
       }
       this.player.setTilePosition(spawnX, spawnY);
-      this.warpSystem.setPosition(spawnX, spawnY);
+      this.warpSystem.setPosition(spawnX, spawnY, this.player.direction);
       this.grassEffect.onSpawn(spawnX, spawnY);
     }
 
@@ -425,7 +425,7 @@ export class Game {
       await this.doorAnimator.playClose(doorX, doorY, doorGid, activeMap);
 
       // Update warp system position so it doesn't re-trigger
-      this.warpSystem.setPosition(this.player.tileX, this.player.tileY);
+      this.warpSystem.setPosition(this.player.tileX, this.player.tileY, this.player.direction);
     } else {
       await this.fadeAsync('in', 0.3, fadeColor);
     }
@@ -527,6 +527,6 @@ export class Game {
     this.debugOverlay.load(activeMap);
 
     // Tell warp system we're already on this tile so it won't re-trigger
-    this.warpSystem.setPosition(spawnPos.x, spawnPos.y);
+    this.warpSystem.setPosition(spawnPos.x, spawnPos.y, this.player.direction);
   }
 }

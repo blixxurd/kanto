@@ -77,7 +77,10 @@ export class PlayerController {
    * Does NOT change the animation — tryStartMove handles that.
    */
   setFacing(dir: Direction): void {
-    this.player.direction = dir;
+    if (dir !== this.player.direction) {
+      this.player.direction = dir;
+      this.player.playAnimation(`idle_${dir}`);
+    }
   }
 
   private updateMove(): void {
