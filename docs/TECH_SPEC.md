@@ -16,21 +16,20 @@
 5. Data Pipeline
 6. Engine Architecture
 7. Core Systems Specification
-8. Editor Specification
-9. Data Formats
-10. Build & Dev Workflow
-11. Phase 1 Sprint Plan
-12. Testing & Agent Verification
-13. Future Phase Hooks
-14. Appendix: GBA Binary Format Reference
+8. Data Formats
+9. Build & Dev Workflow
+10. Phase 1 Sprint Plan
+11. Testing & Agent Verification
+12. Future Phase Hooks
+13. Appendix: GBA Binary Format Reference
 
 ---
 
 ## 1. Project Vision
 
-A browser-based open world Pokémon RPG set in the Kanto region, built from the `pret/pokefirered` decompilation as a data source. The final game features a continuous, vastly expanded Kanto overworld with explorable interiors, NPC schedules and routines, day/night cycles, a full battle engine, and an in-game editor for ongoing world expansion.
+A browser-based open world Pokemon RPG set in the Kanto region, built from the `pret/pokefirered` decompilation as a data source. The final game features a continuous, vastly expanded Kanto overworld with explorable interiors, NPC schedules and routines, day/night cycles, and a full battle engine. Map editing is done in the Tiled desktop editor.
 
-The game is not a port of FireRed. It is a new game that uses FireRed's reverse-engineered data — tile art, Pokémon stats, move data, trainer rosters, dialogue, and map layouts — as its foundation. The map layouts serve as the starting skeleton that gets expanded into a realistic, open-world Kanto inspired by the anime's sense of scale.
+The game is not a port of FireRed. It is a new game that uses FireRed's reverse-engineered data — tile art, Pokemon stats, move data, trainer rosters, dialogue, and map layouts — as its foundation. The map layouts serve as the starting skeleton that gets expanded into a realistic, open-world Kanto inspired by the anime's sense of scale.
 
 ---
 
@@ -42,12 +41,15 @@ The game is not a port of FireRed. It is a new game that uses FireRed's reverse-
 - A stitching script that assembles all outdoor maps into one continuous overworld based on the game's connection data
 - All indoor/cave/dungeon maps exported as individual Tiled JSON files
 - A PixiJS 8 browser application that renders the stitched overworld with correct tiles, palettes, and layering
-- A player character that walks on a 16×16 tile grid with collision, smooth interpolation, walk/run animations
-- A camera that follows the player at 4× pixel-perfect zoom
+- A player character that walks on a 16x16 tile grid with collision, smooth interpolation, walk/run animations
+- A camera that follows the player at 4x pixel-perfect zoom
 - Warp transitions between the overworld and interior maps (enter/exit buildings)
 - Zone detection for music/area name changes as the player moves between towns and routes
-- An in-game editor (toggle with F1) for painting tiles, editing collision, placing warps, resizing maps, and saving changes back to Tiled JSON
-- Screen scaling (1×–6× integer, fit-to-window, fullscreen)
+- Screen scaling (1x-6x integer, fit-to-window, fullscreen)
+- Field effects: tall grass stepping animation, ledge jumps with parabolic arcs, landing dust
+- Tile animations: water, flowers, sand edges
+- Door animations: open/close sequences matching GBA behavior
+- Debug overlay (F3): collision grid, zone borders, tile IDs, mouse hover tooltip
 
 ### Phase 1 IS NOT
 
@@ -64,7 +66,7 @@ The game is not a port of FireRed. It is a new game that uses FireRed's reverse-
 - Player can walk from Pallet Town to Indigo Plateau entirely on the overworld, entering and exiting every building along the way
 - Every outdoor map from the original game renders with correct tiles
 - Collision prevents walking through walls, water, and obstacles
-- The in-game editor can modify the overworld and save valid Tiled JSON
+- Maps are editable in the Tiled desktop editor
 - The application runs at 60fps in Chrome/Firefox/Safari on a 2020-era laptop
 
 ---
@@ -90,21 +92,21 @@ The game is not a port of FireRed. It is a new game that uses FireRed's reverse-
 | Data parsing | regex + struct | C header parsing, binary format reading |
 | Output | JSON + PNG | Tiled-compatible map files, atlas textures |
 
-### External Tools (optional, not required for phase 1)
+### External Tools
 
 | Tool | Purpose |
 |------|---------|
-| Tiled Map Editor | Heavy-duty map editing outside the game |
+| Tiled Map Editor | Map editing — open map files in `public/maps/` directly |
 | Aseprite | Pixel art for new tilesets (phase 2+) |
 | Git | Version control for map files and source |
 
 ### Why This Stack
 
-**PixiJS over Phaser:** We need full control over the game loop, scene management, and tilemap mutation for the editor. Phaser's tilemap system is designed for import-and-play, not runtime editing. Pixi gives us raw rendering primitives with zero opinions about game structure.
+**PixiJS over Phaser:** We need full control over the game loop, scene management, and rendering pipeline. Pixi gives us raw rendering primitives with zero opinions about game structure.
 
-**@pixi/tilemap over manual sprites:** Batches all visible tiles into minimal GPU draw calls. Supports `.clear()` + re-render pattern needed for editor painting. Handles multiple tileset textures via CompositeTilemap.
+**@pixi/tilemap over manual sprites:** Batches all visible tiles into minimal GPU draw calls. Handles multiple tileset textures via CompositeTilemap. Double-buffered rendering eliminates flash on viewport changes.
 
-**Tiled JSON as canonical format:** Industry standard. Editable in Tiled desktop app, our in-game editor, or by hand. Phaser, Godot, Unity, and every other engine can import it if we ever migrate. Single source of truth for all map data.
+**Tiled JSON as canonical format:** Industry standard. Editable in Tiled desktop app or by hand. Phaser, Godot, Unity, and every other engine can import it if we ever migrate. Single source of truth for all map data.
 
 **Vite over Webpack:** Faster dev server, native TypeScript support, simpler config. No reason to use anything heavier.
 
@@ -121,11 +123,12 @@ kanto/
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
-├── index.html                              # entry point: canvas + editor UI containers
+├── index.html                              # entry point: game canvas container
 │
-├── scripts/                                # Python extraction pipeline (run once per decomp update)
+├── scripts/                                # Python extraction pipeline
 │   ├── requirements.txt                    # pillow, numpy
-│   ├── extract_all.py                      # orchestrator: runs everything in order
+│   ├── extract_all.py                      # orchestrator: runs scripts 01-10 in order
+│   ├── config.py                           # paths to decomp repo, output dirs
 │   │
 │   ├── 01_render_metatile_atlases.py       # tiles.png + palettes + metatiles.bin → atlas PNGs
 │   ├── 02_extract_layouts.py              # map.bin → intermediate layout JSONs
@@ -134,144 +137,99 @@ kanto/
 │   ├── 05_extract_collision.py            # metatile_attributes.bin → collision attributes
 │   ├── 06_stitch_overworld.py             # assembles outdoor maps into one overworld
 │   ├── 07_export_interiors.py             # converts indoor/cave maps to individual Tiled JSONs
-│   ├── 08_extract_sprites.py              # player/NPC spritesheets + animation metadata
+│   ├── 08_extract_sprites.py              # player spritesheets + animation metadata
+│   ├── 09_extract_tile_anims.py           # animated tile frames (water, flowers, sand)
+│   ├── 10_extract_door_anims.py           # door animation spritesheets from GBA graphics
 │   │
 │   ├── parsers/                            # shared parsing utilities
 │   │   ├── __init__.py
 │   │   ├── c_header_parser.py             # regex parser for #define, struct initializers
-│   │   ├── gba_binary.py                  # readers for .pal (JASC-PAL), metatiles.bin, map.bin, attrs.bin
-│   │   └── charmap.py                     # pokémon text encoding decoder
+│   │   └── gba_binary.py                  # readers for .pal, metatiles.bin, map.bin, attrs.bin
 │   │
-│   ├── tests/                              # automated verification tools
-│   │   ├── run_all.py                     # master runner: executes all validators, exits 0/1
-│   │   ├── validate_extraction.py         # checks tileset, layout, connection, warp integrity
-│   │   ├── validate_stitch.py             # checks overworld structure, layers, GID ranges
-│   │   ├── validate_traversal.py          # flood-fill from Pallet Town, verifies all towns reachable
-│   │   └── validate_warps.py              # checks every door has an exit, no traps, files exist
-│   │
-│   └── config.py                           # paths to decomp repo, output dirs
+│   └── tests/                              # automated verification tools
+│       ├── run_all.py                     # master runner: executes all validators, exits 0/1
+│       ├── validate_extraction.py         # checks tileset, layout, connection, warp integrity
+│       ├── validate_stitch.py             # checks overworld structure, layers, GID ranges
+│       ├── validate_traversal.py          # flood-fill from Pallet Town, verifies all towns reachable
+│       ├── validate_warps.py              # checks every door has an exit, no traps, files exist
+│       └── browser_test.mjs               # Playwright-based visual testing + automation
 │
-├── decomp/                                 # git submodule or symlink to pret/pokefirered clone
+├── decomp/                                 # pret/pokefirered clone (pinned to commit 7e3f822)
 │   └── (pokefirered repo)                  # NOT committed — user clones separately
 │
-├── public/                                 # static assets served by Vite (extraction output goes here)
+├── public/                                 # static assets served by Vite (extraction output)
 │   ├── maps/
-│   │   ├── overworld.json                  # THE stitched overworld (Tiled JSON)
-│   │   ├── interiors/                      # individual indoor maps
-│   │   │   ├── PalletTown_PlayersHouse1F.json
-│   │   │   ├── PalletTown_PlayersHouse2F.json
-│   │   │   ├── PalletTown_OaksLab.json
-│   │   │   └── ... (~300 files)
-│   │   └── dungeons/                       # caves, tunnels (multi-floor areas)
-│   │       ├── MtMoon_1F.json
-│   │       ├── MtMoon_B1F.json
-│   │       └── ...
+│   │   ├── overworld.json                  # THE stitched overworld (Tiled JSON, 424×416 tiles)
+│   │   ├── interiors/                      # ~300 indoor maps (houses, gyms, labs, etc.)
+│   │   └── dungeons/                       # ~87 cave/tower maps
 │   │
-│   ├── tilesets/                            # pre-rendered metatile atlases
-│   │   ├── general.png                     # primary tileset atlas (shared across all maps)
-│   │   ├── general.tsj                     # Tiled tileset JSON (tile size, count, properties)
-│   │   ├── pallet_town.png                 # secondary tileset atlas
-│   │   ├── pallet_town.tsj
-│   │   ├── viridian_city.png
-│   │   ├── viridian_city.tsj
-│   │   └── ... (~60 tilesets)
+│   ├── tilesets/                            # pre-rendered metatile atlases (~70 pairs)
+│   │   ├── general.png / general.tsj       # primary tileset (shared across all maps)
+│   │   ├── {name}.png / {name}.tsj         # secondary tilesets (per-area)
+│   │   ├── {name}_top.png / {name}_top.tsj # top layer variants
+│   │   ├── {name}_anim_*.png              # animation frame atlases
+│   │   ├── collision_overlay.png/.tsj      # Tiled collision visualization
+│   │   └── behavior_overlay.png/.tsj       # Tiled behavior visualization
 │   │
 │   ├── sprites/
 │   │   ├── player_male.png                 # walk/run/idle spritesheet
 │   │   ├── player_female.png
-│   │   └── player.json                     # animation definitions (frame rects, timing)
+│   │   ├── player.json                     # animation definitions (frame rects, timing)
+│   │   ├── tall_grass.png                  # grass stepping animation (5 frames)
+│   │   ├── landing_dust.png                # ledge landing dust (3 frames)
+│   │   ├── shadow_small.png / shadow_medium.png
+│   │   └── doors/                          # ~32 door animation spritesheets
 │   │
 │   └── data/
-│       ├── overworld_zones.json            # zone bounds, music, weather, encounter refs per area
+│       ├── overworld_zones.json            # zone bounds, music, weather per area
 │       ├── warp_table.json                 # overworld warps + interior return points
-│       ├── overworld_placement.json        # debug: which original map is at which position
-│       └── tileset_registry.json           # tileset name → firstgid, file path, tile count
+│       ├── overworld_placement.json        # original map ID → bounding rect in overworld
+│       ├── tileset_registry.json           # tileset name → firstgid, file path, tile count
+│       ├── tile_anims.json                 # animated tile frame sequences + timing
+│       └── door_anims.json                 # door animation metadata (32 door types)
 │
 ├── src/                                    # TypeScript game source
 │   ├── main.ts                             # creates Pixi Application, instantiates Game
-│   │
 │   ├── Game.ts                             # top-level state machine & update loop
 │   │
-│   ├── core/                               # engine-level systems (game-agnostic)
-│   │   ├── Input.ts                        # keyboard + gamepad polling, key state, key events
+│   ├── core/                               # engine-level systems
+│   │   ├── Input.ts                        # keyboard polling, key state, key events
 │   │   ├── Camera.ts                       # viewport position, zoom, follow, bounds clamping
 │   │   ├── AssetLoader.ts                  # wraps Pixi Assets API for tilesets, sprites, JSON
-│   │   ├── AudioManager.ts                 # wraps Howler.js (stubbed in phase 1)
-│   │   ├── ScreenManager.ts               # scaling, fullscreen, resize handling
-│   │   └── TransitionEffect.ts            # fade to black/white, configurable duration
+│   │   ├── ScreenManager.ts               # resolution presets, fullscreen, resize handling
+│   │   ├── TransitionEffect.ts            # fade to black/white, configurable duration + color
+│   │   └── DebugOverlay.ts                # F3 debug modes: collision, zones, tile IDs, tooltip
 │   │
 │   ├── world/                              # overworld-specific systems
-│   │   ├── TilemapRenderer.ts             # renders tile layers via @pixi/tilemap
-│   │   ├── MapData.ts                      # parsed Tiled JSON: tiles, objects, properties, mutation API
+│   │   ├── TilemapRenderer.ts             # double-buffered CompositeTilemap, texture merging
+│   │   ├── MapData.ts                      # parsed Tiled JSON: tiles, collision, behavior, warps
 │   │   ├── MapManager.ts                   # loads overworld + interiors, handles transitions
-│   │   ├── CollisionMap.ts                # 2D passability grid, behavior queries
-│   │   ├── WarpSystem.ts                  # checks player pos against warp objects, triggers transitions
-│   │   ├── ZoneSystem.ts                  # tracks which zone player is in, fires zone change events
-│   │   └── ViewportCuller.ts              # computes visible tile range for large maps
+│   │   ├── CollisionMap.ts                # passability grid + behavior queries
+│   │   ├── WarpSystem.ts                  # behavior-based warp detection (matches GBA logic)
+│   │   ├── ZoneSystem.ts                  # tracks which zone player is in, fires change events
+│   │   ├── TileAnimator.ts               # animated tiles via canvas pixel blitting
+│   │   └── DoorAnimator.ts               # door open/close overlay sprites
 │   │
 │   ├── entities/                           # game objects that exist in the world
 │   │   ├── Player.ts                       # sprite, grid position, direction, animation state
-│   │   ├── PlayerController.ts            # input → grid movement with interpolation + collision
-│   │   └── AnimatedEntity.ts              # base class: sprite + grid pos + animation state machine
+│   │   └── PlayerController.ts            # grid movement, collision, ledge jumps
 │   │
-│   ├── editor/                             # in-game editor (toggled with F1)
-│   │   ├── Editor.ts                       # master controller: enable/disable, tool management
-│   │   ├── EditorState.ts                 # undo/redo stack, dirty tracking, current tool/layer
-│   │   ├── tools/
-│   │   │   ├── TilePaintTool.ts           # paint metatiles on click/drag
-│   │   │   ├── CollisionPaintTool.ts      # toggle collision on/off per tile
-│   │   │   ├── WarpTool.ts               # place, edit, delete warp objects
-│   │   │   ├── EraseTool.ts              # clear tiles to empty
-│   │   │   └── SelectTool.ts             # select region for copy/paste/delete
-│   │   ├── ui/                             # HTML/CSS overlay panels
-│   │   │   ├── Toolbar.ts                 # tool buttons, layer toggle, zoom, save
-│   │   │   ├── TilePalette.ts            # metatile atlas grid for brush selection
-│   │   │   ├── PropertyPanel.ts          # edit properties of selected warp/zone
-│   │   │   ├── MinimapPanel.ts           # overview of full overworld with viewport rect
-│   │   │   └── StatusBar.ts              # cursor coords, current zone, fps
-│   │   ├── overlays/                       # Pixi-rendered editor visuals
-│   │   │   ├── GridOverlay.ts            # tile grid lines
-│   │   │   ├── CollisionOverlay.ts       # red/green per-tile collision display
-│   │   │   ├── WarpMarkers.ts            # warp point icons + labels
-│   │   │   ├── ZoneBorders.ts            # zone boundary outlines
-│   │   │   └── CursorPreview.ts          # ghost of selected tile at cursor position
-│   │   └── MapSerializer.ts              # exports MapData → valid Tiled JSON for saving
-│   │
-│   ├── data/                               # runtime data loading & registries
-│   │   ├── TilesetRegistry.ts             # maps tileset name → texture, firstgid, tile count
-│   │   ├── MapRegistry.ts                # index of all maps: overworld + interiors + dungeons
-│   │   ├── WarpRegistry.ts               # loaded warp table with lookup by position
-│   │   └── ZoneRegistry.ts               # loaded zone definitions with spatial lookup
+│   ├── effects/                            # visual field effects
+│   │   ├── GrassEffect.ts                 # tall grass stepping overlay animation
+│   │   └── LandingDustEffect.ts           # dust puff on ledge landing
 │   │
 │   ├── utils/                              # shared utilities
-│   │   ├── GridMovement.ts                # grid-locked movement math (used by Player and future NPCs)
-│   │   ├── Direction.ts                   # direction enum, delta vectors, opposite directions
-│   │   ├── EventEmitter.ts               # simple typed event system
-│   │   └── TileCoords.ts                 # pixel ↔ tile coordinate conversion helpers
+│   │   ├── Direction.ts                   # direction deltas, opposite directions
+│   │   ├── EventEmitter.ts               # simple typed pub/sub
+│   │   └── TileCoords.ts                 # pixel ↔ tile coordinate helpers, TILE_SIZE = 16
 │   │
 │   └── types/                              # TypeScript type definitions
 │       ├── tiled.ts                        # Tiled JSON format types (TiledMap, TiledLayer, etc.)
-│       ├── game.ts                        # Direction, GameState, Zone, Warp, etc.
-│       └── editor.ts                      # EditorTool, BrushState, UndoAction, etc.
-│
-├── editor/                                 # HTML/CSS for editor UI panels
-│   ├── editor.css                          # editor panel styling
-│   ├── toolbar.html                        # tool buttons template
-│   ├── tile-palette.html                  # metatile grid template
-│   └── property-panel.html               # property editor template
-│
-├── reference/                              # extracted original maps for design reference (not runtime)
-│   ├── original_maps/                     # individual Tiled JSONs of every original map
-│   │   ├── PalletTown.json
-│   │   ├── Route1.json
-│   │   └── ...
-│   └── geographic_layout.json            # relative positions of all original maps
+│       └── game.ts                        # Direction, GameState, Zone, Warp, WarpEvent, etc.
 │
 └── docs/
     ├── TECH_SPEC.md                       # this document
-    ├── EXTRACTION.md                      # how to run the extraction pipeline
-    ├── EDITOR_GUIDE.md                    # how to use the in-game editor
-    └── ARCHITECTURE.md                    # system architecture and data flow diagrams
+    └── TESTING_TOOLKIT.md                 # the 4 validation tools
 ```
 
 ---
@@ -295,6 +253,8 @@ pret/pokefirered (decomp repo)
 │  06. Stitch overworld (BFS + tile pasting)       │
 │  07. Export interiors (indoor maps → Tiled JSON) │
 │  08. Extract sprites (player spritesheets)       │
+│  09. Extract tile animations (water, flowers)    │
+│  10. Extract door animations (open/close)        │
 │                                                  │
 └────────────────────┬────────────────────────────┘
                      │
@@ -447,7 +407,7 @@ def parse_tile_ref(value: int) -> dict:
 
 ```
 Game
- ├── state: 'booting' | 'playing' | 'editor' | 'transitioning'
+ ├── state: 'booting' | 'playing' | 'transitioning'
  │
  ├── 'booting'
  │    └── AssetLoader loads overworld.json, tilesets, player sprite
@@ -458,17 +418,14 @@ Game
  │    ├── Camera follows player
  │    ├── WarpSystem checks for warp triggers
  │    ├── ZoneSystem checks for zone changes
+ │    ├── GrassEffect + LandingDustEffect run field effects
+ │    ├── TileAnimator ticks animated tiles
  │    ├── TilemapRenderer renders visible viewport
- │    └── F1 key → transition to 'editor'
- │
- ├── 'editor'
- │    ├── Editor handles tool input (paint, collision, warps)
- │    ├── Camera controlled by WASD/mouse drag
- │    ├── TilemapRenderer renders with editor overlays
- │    └── F1 key → transition to 'playing'
+ │    └── DebugOverlay renders F3 debug modes
  │
  └── 'transitioning'
       ├── TransitionEffect runs fade animation
+      ├── DoorAnimator plays door open/close sequences
       ├── MapManager swaps overworld ↔ interior
       └── auto-transitions to 'playing' when complete
 ```
@@ -478,41 +435,43 @@ Game
 ```
 app.stage
  └── worldContainer                    # Camera moves this container
-      ├── bottomTilemap                # CompositeTilemap — ground layer
-      ├── entityContainer              # Container — player, NPCs (future)
-      │    └── playerSprite            # AnimatedSprite
-      ├── topTilemap                   # CompositeTilemap — overhead layer (tree tops, roofs)
-      └── editorOverlayContainer       # Container — grid, collision colors, warp markers
-           ├── gridGraphics            # Graphics — tile grid lines
-           ├── collisionGraphics       # Graphics — red/green overlay
-           ├── warpMarkerContainer     # Container — warp point sprites + labels
-           └── cursorPreviewSprite     # Sprite — ghost tile at cursor
+      ├── bottomTilemap[0,1]           # CompositeTilemap — double-buffered ground layer
+      ├── entityContainer              # Container (sortableChildren) — player, grass, dust, doors
+      │    ├── playerSprite            # Sprite — player character
+      │    ├── grassSprites            # Sprite[] — active grass overlay animations
+      │    ├── dustSprites             # Sprite[] — landing dust animations
+      │    └── doorSprites             # Sprite[] — door open/close overlays
+      ├── topTilemap[0,1]             # CompositeTilemap — double-buffered overhead layer
+      └── debugOverlay                 # Container — collision/zone/tile ID overlays (F3)
 
  └── uiContainer                       # Fixed to screen (not affected by camera)
-      ├── transitionOverlay            # Graphics — full-screen black rect for fades
+      ├── transitionOverlay            # Graphics — full-screen fade rect (black or white)
       ├── zoneNameText                 # Text — "Pallet Town" popup
-      └── debugText                    # Text — FPS, coords, zone name
+      └── debugTooltip                 # Text — tile info on mouse hover
 ```
 
 ### System Dependencies
 
 ```
-Input ──────────────────┬──────────────────────────────┐
+Input ─────────────────────────────────────────────────┐
                         │                              │
                         ▼                              ▼
-              PlayerController                    Editor
-                   │    │                           │
-                   │    ▼                           ▼
-                   │  CollisionMap ◄──── MapData ──── MapSerializer
-                   │                      ▲              │
-                   ▼                      │              ▼
-              WarpSystem                  │        Tiled JSON (save)
+              PlayerController                   DebugOverlay
+                   │    │
+                   │    ▼
+                   │  CollisionMap ◄──── MapData
+                   │                      ▲
+                   ▼                      │
+              WarpSystem                  │
                    │                      │
                    ▼                      │
               MapManager ─────────────────┘
                    │
                    ▼
-           TilemapRenderer ◄──── ViewportCuller ◄──── Camera
+           TilemapRenderer ◄──── Camera
+                   │
+                   ▼
+           TileAnimator (mutates atlas textures in-place)
 ```
 
 ---
@@ -529,9 +488,9 @@ class Game {
   // Core
   private input: Input;
   private camera: Camera;
-  private screen: ScreenManager;
+  private screenManager: ScreenManager;
   private transition: TransitionEffect;
-  private audio: AudioManager;
+  private debugOverlay: DebugOverlay;
 
   // World
   private worldContainer: Container;
@@ -540,17 +499,19 @@ class Game {
   private collisionMap: CollisionMap;
   private warpSystem: WarpSystem;
   private zoneSystem: ZoneSystem;
+  private tileAnimator: TileAnimator;
+  private doorAnimator: DoorAnimator;
 
   // Entities
   private player: Player;
   private playerController: PlayerController;
 
-  // Editor
-  private editor: Editor | null = null;
+  // Effects
+  private grassEffect: GrassEffect;
+  private landingDust: LandingDustEffect;
 
   async init(): Promise<void>;  // create Pixi app, load assets, start loop
   private update(): void;       // called every frame by app.ticker
-  private toggleEditor(): void; // F1 handler
 }
 ```
 
@@ -572,7 +533,7 @@ class Input {
 
 ### 7.3 Camera.ts
 
-Controls the `worldContainer` position and scale. Supports smooth follow, instant snap, and manual pan (for editor).
+Controls the `worldContainer` position and scale. Supports smooth follow, instant snap, and manual pan.
 
 ```typescript
 class Camera {
@@ -582,43 +543,42 @@ class Camera {
   setZoom(scale: number): void;        // integer zoom (1-6), sets worldContainer.scale
   follow(target: { x: number; y: number }, lerp?: number): void;
   stopFollow(): void;
-  panTo(x: number, y: number): void;   // instant move (editor)
+  panTo(x: number, y: number): void;   // instant move
   clampToBounds(mapW: number, mapH: number): void;
   update(): void;                       // apply lerp follow + bounds clamping
-  screenToWorld(sx: number, sy: number): { x: number; y: number };  // for editor clicks
+  screenToWorld(sx: number, sy: number): { x: number; y: number };
   worldToScreen(wx: number, wy: number): { x: number; y: number };
 }
 ```
 
 ### 7.4 TilemapRenderer.ts
 
-Renders visible tiles using `@pixi/tilemap` CompositeTilemap. Handles viewport culling for large maps.
+Renders visible tiles using `@pixi/tilemap` CompositeTilemap with double-buffering. Handles viewport culling for large maps and texture source merging (stacking atlas textures vertically to fit within CompositeTilemap's 16-source limit).
 
 ```typescript
 class TilemapRenderer {
-  // Pixi containers
-  private bottomLayer: CompositeTilemap;
-  private topLayer: CompositeTilemap;
-  private entityLayer: Container;
+  // Double-buffered tilemaps (swap to avoid flash)
+  private buffers: Array<{ bottom: CompositeTilemap; top: CompositeTilemap }>;
+  private activeBuffer: number;
+  readonly entityLayer: Container;
 
-  // Tile texture lookup: global GID → Pixi Texture (sub-rect of atlas)
+  // Tile texture lookup: global GID → Pixi Texture
   private tileTextures: Map<number, Texture>;
 
-  loadMap(mapData: MapData, tilesetRegistry: TilesetRegistry): void;
+  loadMap(mapData: MapData, tileTextures: Map<number, Texture>): void;
   renderViewport(cameraX: number, cameraY: number, viewW: number, viewH: number): void;
-  getEntityLayer(): Container;
-
-  // Editor support
-  refreshTile(x: number, y: number): void;  // re-render single tile after edit
-  refreshAll(): void;                        // full re-render after bulk edit
+  getMergedSourceInfo(original: TextureSource): MergedSourceInfo | undefined;
+  refreshAll(): void;                        // force re-render on next frame
 }
 ```
 
-**Viewport culling:** Only tiles within the camera view + 2-tile buffer are rendered. For a 960×640 viewport at 4× zoom, that's ~17×12 = ~204 tiles per layer. On camera move, the visible range is recalculated and the tilemap is re-rendered if changed.
+**Viewport culling:** Only tiles within the camera view + 2-tile buffer are rendered. Viewport bounds are memoized — re-render only occurs when the visible tile range changes.
+
+**Texture merging:** When a map uses more than 16 tileset sources, pairs of atlas textures are composited vertically into shared canvases. Tile UV coordinates are adjusted by the merge offset.
 
 ### 7.5 MapData.ts
 
-Runtime representation of a loaded Tiled JSON map. Provides both read access (for rendering/collision) and write access (for editor).
+Runtime representation of a loaded Tiled JSON map. Provides read access for rendering, collision, behavior, warps, and zones.
 
 ```typescript
 class MapData {
@@ -626,10 +586,15 @@ class MapData {
   readonly width: number;
   readonly height: number;
 
-  // Tile layers (flat arrays, row-major, GID values)
+  // Tile layers (flat typed arrays, row-major, GID values)
   bottomTiles: Uint32Array;
   topTiles: Uint32Array;
   collisionGrid: Uint8Array;
+  behaviorGrid: Uint16Array;
+
+  // Tileset metadata (parallel arrays)
+  tilesetFirstGids: number[];
+  tilesetSources: string[];
 
   // Object layers
   warps: Warp[];
@@ -639,20 +604,12 @@ class MapData {
   getBottomTile(x: number, y: number): number;
   getTopTile(x: number, y: number): number;
   isPassable(x: number, y: number): boolean;
+  getBehavior(x: number, y: number): number;
   getWarpAt(x: number, y: number): Warp | null;
   getZoneAt(x: number, y: number): Zone | null;
 
-  // Write (editor)
-  setTile(x: number, y: number, layer: 'bottom' | 'top', gid: number): void;
-  setCollision(x: number, y: number, blocked: boolean): void;
-  addWarp(warp: Warp): void;
-  removeWarp(id: number): void;
-  updateWarp(id: number, changes: Partial<Warp>): void;
-  resize(direction: Direction, tiles: number): void;
-
   // Serialization
-  static fromTiledJSON(json: TiledMap): MapData;
-  toTiledJSON(): TiledMap;
+  static fromTiledJSON(json: TiledMap, id?: string): MapData;
 }
 ```
 
@@ -742,65 +699,7 @@ class ZoneSystem {
 
 ---
 
-## 8. Editor Specification
-
-### Toggle
-
-F1 key toggles between 'playing' and 'editor' states. When entering editor:
-- Player stops moving
-- Camera switches to manual control (WASD to pan, mouse wheel to zoom)
-- HTML toolbar and tile palette panels appear
-- Editor overlays render on the Pixi canvas (grid, collision, warps)
-
-When exiting editor:
-- HTML panels hide
-- Editor overlays hide
-- Camera returns to follow mode
-- Player resumes at last position
-
-### Tools
-
-| Tool | Activation | Behavior |
-|------|-----------|----------|
-| Tile Paint | T key or toolbar button | Select metatile from palette, click/drag to paint on active layer |
-| Collision Paint | C key or toolbar button | Left click = block, right click = unblock, visual overlay |
-| Warp Tool | W key or toolbar button | Click to place warp, double-click to edit properties, drag to move, Delete to remove |
-| Erase | E key or toolbar button | Click/drag to clear tiles to empty (GID 0) |
-| Select | S key or toolbar button | Click+drag to select rectangle, Ctrl+C copy, Ctrl+V paste, Delete to clear |
-
-### Layers
-
-Editor has a layer toggle (keyboard 1/2/3):
-- 1 = bottom tile layer (active for painting ground)
-- 2 = top tile layer (active for painting overhead)
-- 3 = collision layer (visual only — no tile painting, use collision tool)
-
-Inactive layers render at 50% opacity so the active layer is visually prominent.
-
-### Undo/Redo
-
-EditorState maintains a stack of UndoAction objects:
-
-```typescript
-type UndoAction =
-  | { type: 'tile'; x: number; y: number; layer: 'bottom' | 'top'; oldGid: number; newGid: number }
-  | { type: 'collision'; x: number; y: number; oldValue: number; newValue: number }
-  | { type: 'warp_add'; warp: Warp }
-  | { type: 'warp_remove'; warp: Warp }
-  | { type: 'warp_move'; id: number; oldX: number; oldY: number; newX: number; newY: number };
-```
-
-Ctrl+Z = undo, Ctrl+Y or Ctrl+Shift+Z = redo. Drag operations batch into a single undo entry.
-
-### Save
-
-Save button (or Ctrl+S) triggers `MapSerializer.toTiledJSON()` on the active map and downloads the result as a `.json` file. For the overworld, this replaces `public/maps/overworld.json`. For interiors, it replaces the specific interior file.
-
-Future: optional local dev server with a PUT endpoint for hot-save without download dialog.
-
----
-
-## 9. Data Formats
+## 8. Data Formats
 
 ### 9.1 Tiled JSON Map (overworld.json)
 
@@ -924,7 +823,7 @@ interface PlayerSpriteData {
 
 ---
 
-## 10. Build & Dev Workflow
+## 9. Build & Dev Workflow
 
 ### Initial Setup
 
@@ -957,14 +856,15 @@ npm run dev
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "extract": "python scripts/extract_all.py",
-    "extract:tilesets": "python scripts/01_render_metatile_atlases.py",
-    "extract:stitch": "python scripts/06_stitch_overworld.py",
-    "test": "python scripts/tests/run_all.py",
-    "test:extraction": "python scripts/tests/validate_extraction.py",
-    "test:stitch": "python scripts/tests/validate_stitch.py",
-    "test:traversal": "python scripts/tests/validate_traversal.py",
-    "test:warps": "python scripts/tests/validate_warps.py",
+    "extract": "python3 scripts/extract_all.py",
+    "extract:tilesets": "python3 scripts/01_render_metatile_atlases.py",
+    "extract:stitch": "python3 scripts/06_stitch_overworld.py",
+    "test": "python3 scripts/tests/run_all.py",
+    "test:extraction": "python3 scripts/tests/validate_extraction.py",
+    "test:stitch": "python3 scripts/tests/validate_stitch.py",
+    "test:traversal": "python3 scripts/tests/validate_traversal.py",
+    "test:warps": "python3 scripts/tests/validate_warps.py",
+    "test:browser": "node scripts/tests/browser_test.mjs",
     "typecheck": "tsc --noEmit"
   }
 }
@@ -998,7 +898,6 @@ export default defineConfig({
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kanto</title>
-  <link rel="stylesheet" href="/editor/editor.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; }
@@ -1008,30 +907,16 @@ export default defineConfig({
       display: flex;
       align-items: center;
       justify-content: center;
-      image-rendering: pixelated;        /* nearest-neighbor scaling */
+      image-rendering: pixelated;
     }
     #game-container canvas {
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
-    #editor-container {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      pointer-events: none;              /* pass-through when editor inactive */
-      z-index: 100;
-      display: none;                     /* shown when editor active */
-    }
-    #editor-container.active {
-      display: block;
-    }
-    #editor-container > * {
-      pointer-events: auto;              /* panels themselves receive clicks */
-    }
   </style>
 </head>
 <body>
   <div id="game-container"></div>
-  <div id="editor-container"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
@@ -1039,7 +924,7 @@ export default defineConfig({
 
 ---
 
-## 11. Phase 1 Sprint Plan
+## 10. Phase 1 Sprint Plan
 
 ### Sprint 1: Extraction Pipeline (Day 1–3)
 
@@ -1107,54 +992,45 @@ export default defineConfig({
 
 **Sprint 4 deliverable:** Player can enter every building in Pallet Town, walk around inside, exit back to the correct overworld position. Zone name displays when entering a new area.
 
-### Sprint 5: Editor MVP (Day 13–17)
+### Sprint 5: Effects + Animations (Day 13–15)
 
 | Task | Files | Estimated Hours |
 |------|-------|----------------|
-| Editor.ts: toggle on/off, state management | editor/Editor.ts | 2h |
-| EditorState: undo/redo stack | editor/EditorState.ts | 2h |
-| Toolbar HTML + integration | editor/ui/Toolbar.ts | 2h |
-| TilePalette HTML + brush selection | editor/ui/TilePalette.ts | 3h |
-| StatusBar | editor/ui/StatusBar.ts | 1h |
-| GridOverlay | editor/overlays/GridOverlay.ts | 1h |
-| CursorPreview | editor/overlays/CursorPreview.ts | 1h |
-| TilePaintTool | editor/tools/TilePaintTool.ts | 3–4h |
-| CollisionPaintTool + CollisionOverlay | editor/tools/CollisionPaintTool.ts | 2–3h |
-| WarpTool + WarpMarkers | editor/tools/WarpTool.ts | 3–4h |
-| MapSerializer: export to Tiled JSON | editor/MapSerializer.ts | 2–3h |
-| **validateBeforeSave() — inline save validator** | **editor/MapSerializer.ts** | **1h** |
-| Save button (download JSON) | Toolbar.ts | 1h |
-| Verify: paint tiles, toggle collision, place warps, save, reload | — | 2h |
+| Tile animation extractor | 09_extract_tile_anims.py | 3h |
+| Door animation extractor | 10_extract_door_anims.py | 2h |
+| TileAnimator: canvas pixel blitting | world/TileAnimator.ts | 3-4h |
+| DoorAnimator: open/close overlay | world/DoorAnimator.ts | 3-4h |
+| GrassEffect: tall grass stepping | effects/GrassEffect.ts | 2-3h |
+| LandingDustEffect: ledge landing | effects/LandingDustEffect.ts | 1-2h |
+| Ledge jump detection in PlayerController | entities/PlayerController.ts | 2-3h |
+| Door warp sequence in Game.ts | Game.ts | 2-3h |
+| Verify: grass animates, doors animate, ledges jump | -- | 2h |
 
-**Sprint 5 deliverable:** Press F1 to enter editor. Paint tiles from the metatile palette. Toggle collision. Place and configure warps. Save produces valid Tiled JSON (validated before write). Reload the page and see your changes.
+**Sprint 5 deliverable:** Water and flowers animate. Doors play open/close sequences. Grass rustles when stepped on. Ledge jumps work with parabolic arcs and landing dust.
 
-### Sprint 6: Polish + Full World Verification (Day 18–20)
+### Sprint 6: Polish + Full World Verification (Day 16–18)
 
 | Task | Files | Estimated Hours |
 |------|-------|----------------|
-| **Run `run_all.py` — fix all failures** | **scripts/tests/** | **2–3h** |
-| Walk the entire overworld: verify all maps stitched correctly | — | 3–4h |
-| Fix tile rendering issues (wrong palette, missing tiles, misaligned) | — | 2–4h |
-| Fix collision issues (walkable walls, blocked open areas) | — | 2h |
-| Fix warp issues (wrong destinations, missing return points) | — | 2h |
+| **Run `run_all.py` -- fix all failures** | **scripts/tests/** | **2-3h** |
+| Walk the entire overworld: verify all maps stitched correctly | -- | 3-4h |
+| Fix tile rendering issues (wrong palette, missing tiles, misaligned) | -- | 2-4h |
+| Fix collision issues (walkable walls, blocked open areas) | -- | 2h |
+| Fix warp issues (wrong destinations, missing return points) | -- | 2h |
 | **Implement debug API (`window.__gameDebug`)** | **Game.ts** | **1h** |
-| Debug overlay: tile IDs, collision grid, zone borders | — | 2h |
-| Screen scaling options (1×–6×, fit, fullscreen) | ScreenManager.ts | 1–2h |
-| EraseTool + SelectTool | editor/tools/ | 2–3h |
-| Editor: MinimapPanel | editor/ui/MinimapPanel.ts | 2–3h |
-| PropertyPanel for warp editing | editor/ui/PropertyPanel.ts | 2h |
-| README + extraction docs | docs/ | 2h |
-| **Final `run_all.py` — confirm PASS** | **scripts/tests/** | **30min** |
+| Debug overlay: tile IDs, collision grid, zone borders, tooltip | DebugOverlay.ts | 2h |
+| Screen scaling options (1x-6x, fit, fullscreen) | ScreenManager.ts | 1-2h |
+| **Final `run_all.py` -- confirm PASS** | **scripts/tests/** | **30min** |
 
-**Sprint 6 deliverable:** Phase 1 complete. Full Kanto overworld traversable. Every building enterable. Editor functional. All validators pass. Documentation written.
+**Sprint 6 deliverable:** Phase 1 complete. Full Kanto overworld traversable. Every building enterable. Maps editable in Tiled. All validators pass.
 
 ---
 
-## 12. Testing & Agent Verification
+## 11. Testing & Agent Verification
 
 ### Principle
 
-If the data is correct, the rendering is correct. Test data and logic, not pixels. Five tools — four Python validators for the data pipeline, one TypeScript validator inline in the editor. An agent runs `python scripts/tests/run_all.py` after any change and gets a clear PASS/FAIL with specific error messages. No human needed for verification.
+If the data is correct, the rendering is correct. Test data and logic, not pixels. Four Python validators for the data pipeline. An agent runs `python scripts/tests/run_all.py` after any change and gets a clear PASS/FAIL with specific error messages. No human needed for verification.
 
 ### Tool 1: `scripts/tests/validate_extraction.py`
 
@@ -1213,19 +1089,6 @@ Run after stitching. Verifies every door can be entered and exited.
 
 **Output:** PASS/FAIL + list of traps, orphans, and missing files
 
-### Tool 5: `validateBeforeSave()` (TypeScript, inline in editor)
-
-Runs automatically before every editor save. Blocks corrupted output from being written.
-
-**Checks:**
-- Map has valid positive dimensions
-- Every tile layer data array length matches width × height
-- No negative GIDs in any tile layer
-- Every non-zero GID falls within a registered tileset's firstgid range
-- Every object in object layers has x and y coordinates
-
-**Behavior:** If validation fails, the save is blocked, errors are logged to console, and a toast notification tells the user what's wrong. No corrupted file is ever written.
-
 ### Master Runner: `scripts/tests/run_all.py`
 
 Executes all four Python validators in sequence. Prints a summary table. Exits with code 0 (all pass) or 1 (any failure). Designed for CI or agent automation.
@@ -1265,7 +1128,6 @@ OVERALL: PASS
 |----------|--------|
 | Any extraction script | `validate_extraction.py` |
 | Overworld stitcher | `validate_stitch.py` + `validate_traversal.py` + `validate_warps.py` |
-| Editor save | `validateBeforeSave()` (automatic, inline) |
 | Any change at all | `run_all.py` |
 
 ### Debug API for Runtime Inspection
@@ -1291,7 +1153,7 @@ This allows agents to programmatically query game state, teleport the player, an
 
 ---
 
-## 13. Future Phase Hooks
+## 12. Future Phase Hooks
 
 The phase 1 architecture explicitly supports these future features without refactoring:
 
@@ -1325,15 +1187,15 @@ The phase 1 architecture explicitly supports these future features without refac
 
 **What to build:** `BattleScene.ts`, `BattleState.ts`, `DamageCalc.ts`, `MoveEffect.ts`, `BattleAI.ts`, `BattleUI.ts`. The decomp's `src/battle_script_commands.c` and `src/battle_util.c` serve as line-by-line specification.
 
-### Phase 7: Menus (Party, Bag, Pokédex)
+### Phase 7: Menus (Party, Bag, Pokedex)
 
-**Hook:** HTML overlay system (used by editor) works for game UI too. Menus are HTML/CSS panels that pause the game loop while open.
+**Hook:** HTML overlay system works for game UI. Menus are HTML/CSS panels that pause the game loop while open.
 
 **What to build:** `PartyMenu.ts`, `BagMenu.ts`, `PokedexMenu.ts`, `SummaryScreen.ts`, `SettingsMenu.ts`.
 
 ### Phase 8: Overworld Expansion
 
-**Hook:** The editor. The entire expansion workflow — resize the overworld, paint new terrain, add buildings, place NPCs — uses tools built in phase 1. New tilesets are added by creating atlas PNGs in Aseprite and registering them in the tileset registry.
+**Hook:** Tiled desktop editor. The entire expansion workflow — resize the overworld, paint new terrain, add buildings, place NPCs — uses Tiled to edit map files directly. New tilesets are added by creating atlas PNGs in Aseprite and registering them in the tileset registry.
 
 ### Phase 9: Audio
 
@@ -1349,7 +1211,7 @@ The phase 1 architecture explicitly supports these future features without refac
 
 ---
 
-## 14. Appendix: GBA Binary Format Reference
+## 13. Appendix: GBA Binary Format Reference
 
 ### Palette (.pal — JASC-PAL text format)
 - Text file, NOT binary

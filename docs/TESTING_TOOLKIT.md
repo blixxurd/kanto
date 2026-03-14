@@ -6,7 +6,7 @@ If the data is correct, the rendering is correct. Test data, not pixels.
 
 ---
 
-## 5 Tools. That's It.
+## 4 Tools. That's It.
 
 ### Tool 1: `validate_extraction.py`
 
@@ -325,62 +325,6 @@ def validate():
 
 ---
 
-### Tool 5: `validate_save.ts`
-
-Inline in the editor. Runs before every save. Blocks bad writes.
-
-```typescript
-function validateBeforeSave(json: TiledMap): string[] {
-  const errors: string[] = [];
-
-  // Dimensions
-  if (!json.width || !json.height || json.width < 1 || json.height < 1)
-    errors.push('Invalid dimensions');
-
-  // Tile layers have correct data length
-  for (const layer of json.layers) {
-    if (layer.type === 'tilelayer') {
-      if (layer.data.length !== json.width * json.height)
-        errors.push(`Layer "${layer.name}": wrong data length`);
-      if (layer.data.some(gid => gid < 0))
-        errors.push(`Layer "${layer.name}": negative GID`);
-    }
-    if (layer.type === 'objectgroup') {
-      for (const obj of layer.objects) {
-        if (obj.x == null || obj.y == null)
-          errors.push(`Object "${obj.name}": missing position`);
-      }
-    }
-  }
-
-  // All GIDs in valid tileset ranges
-  const maxGid = Math.max(...json.tilesets.map(ts => ts.firstgid)) + 10000;
-  for (const layer of json.layers) {
-    if (layer.type !== 'tilelayer') continue;
-    for (const gid of layer.data) {
-      if (gid > maxGid) {
-        errors.push(`GID ${gid} exceeds tileset range`);
-        break;
-      }
-    }
-  }
-
-  return errors;
-}
-
-// Usage in editor:
-const errors = validateBeforeSave(mapData.toTiledJSON());
-if (errors.length) {
-  console.error('Save blocked:', errors);
-  showEditorToast('Save failed: invalid map data');
-} else {
-  downloadJSON(mapData.toTiledJSON(), filename);
-  showEditorToast('Saved');
-}
-```
-
----
-
 ## Runner: `scripts/tests/run_all.py`
 
 ```python
@@ -427,7 +371,6 @@ sys.exit(0 if passed else 1)
 |----------|--------|
 | Any extraction script | `validate_extraction.py` |
 | Stitcher | `validate_stitch.py` + `validate_traversal.py` + `validate_warps.py` |
-| Editor save | `validate_save.ts` (inline, automatic) |
 | Any change | `run_all.py` |
 
-That's it. Five tools. Zero pixel comparison. Pure data and logic checks. If all four Python validators pass, the map is structurally correct, fully traversable, and all doors work. The fifth tool prevents the editor from corrupting its own output.
+That's it. Four tools. Zero pixel comparison. Pure data and logic checks. If all four validators pass, the map is structurally correct, fully traversable, and all doors work.

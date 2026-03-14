@@ -17,11 +17,12 @@ Run in order, or all at once with `npm run extract`:
 | `07_export_interiors.py` | Export indoor/cave maps as individual Tiled JSONs |
 | `08_extract_sprites.py` | Extract player spritesheets + animation metadata |
 | `09_extract_tile_anims.py` | Extract animated tile frames (water, flowers, sand) |
+| `10_extract_door_anims.py` | Extract door animation spritesheets from GBA graphics |
 
 ## Supporting Files
 
 - **`config.py`** -- Shared paths and constants (decomp location, output dirs, tileset pairings)
-- **`extract_all.py`** -- Runs all 9 scripts in sequence
+- **`extract_all.py`** -- Runs scripts 01-10 in sequence with validation
 - **`parsers/`** -- Shared binary format parsers (palettes, metatiles, map layouts)
 - **`requirements.txt`** -- Python dependencies (`pillow`, `numpy`)
 - **`tests/`** -- Validation scripts run by `npm test`

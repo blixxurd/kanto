@@ -16,7 +16,6 @@ import { DoorAnimator } from './world/DoorAnimator';
 import { Player } from './entities/Player';
 import { PlayerController } from './entities/PlayerController';
 import { TileAnimator } from './world/TileAnimator';
-import { Editor } from './editor/Editor';
 import { GrassEffect } from './effects/GrassEffect';
 import { LandingDustEffect } from './effects/LandingDustEffect';
 import { TILE_SIZE } from './utils/TileCoords';
@@ -44,7 +43,6 @@ export class Game {
   private grassEffect!: GrassEffect;
   private landingDust!: LandingDustEffect;
   private doorAnimator!: DoorAnimator;
-  private editor!: Editor;
   private screenManager!: ScreenManager;
   private debugOverlay!: DebugOverlay;
 
@@ -181,19 +179,6 @@ export class Game {
     this.debugOverlay.attachTooltip(this.uiContainer);
     this.input.onKeyDown('F3', () => this.debugOverlay.toggle());
 
-    // Editor
-    this.editor = new Editor(this.worldContainer, this.camera, this.input);
-    this.editor.load(activeMap, this.tilemapRenderer);
-    this.input.onKeyDown('F1', () => {
-      this.editor.toggle();
-      if (this.editor.isActive()) {
-        this.state = 'editor';
-      } else {
-        this.state = 'playing';
-        this.camera.follow(this.player.getCenterPixel());
-      }
-    });
-
     // Warp handler
     this.warpSystem.onWarp.on((event) => this.handleWarp(event));
 
@@ -271,10 +256,6 @@ export class Game {
         this.zoneSystem.update(this.player.tileX, this.player.tileY);
         break;
       }
-      case 'editor':
-        this.editor.update();
-        this.camera.update();
-        break;
       case 'transitioning':
         // Transition update is driven by the main loop.
         // Camera and effects keep running so door walk animations render properly.

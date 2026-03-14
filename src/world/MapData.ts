@@ -59,22 +59,21 @@ export class MapData {
     ) ?? null;
   }
 
-  setTile(x: number, y: number, layer: 'bottom' | 'top', gid: number): void {
-    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
-    const idx = y * this.width + x;
-    if (layer === 'bottom') this.bottomTiles[idx] = gid;
-    else this.topTiles[idx] = gid;
-  }
-
-  setCollision(x: number, y: number, blocked: boolean): void {
-    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
-    this.collisionGrid[y * this.width + x] = blocked ? 1 : 0;
-  }
 
   static fromTiledJSON(json: TiledMap, id = 'unknown'): MapData {
     const map = new MapData(id, json.width, json.height);
     map.tilesetFirstGids = (json.tilesets || []).map((ts: any) => ts.firstgid);
     map.tilesetSources = (json.tilesets || []).map((ts: any) => ts.source ?? '');
+
+    // Detect utility tileset GID offsets in Tiled-patched maps.
+    // When present, collision/behavior layer values are Tiled GIDs, not raw values.
+    let collisionFirstGid = 0;
+    let behaviorFirstGid = 0;
+    for (let i = 0; i < map.tilesetSources.length; i++) {
+      const src = map.tilesetSources[i];
+      if (src.includes('collision_overlay')) collisionFirstGid = map.tilesetFirstGids[i];
+      else if (src.includes('behavior_overlay')) behaviorFirstGid = map.tilesetFirstGids[i];
+    }
 
     for (const layer of json.layers) {
       if (layer.type === 'tilelayer') {
@@ -82,8 +81,24 @@ export class MapData {
         const arr = new Uint32Array(tileLayer.data);
         if (tileLayer.name === 'bottom') map.bottomTiles = arr;
         else if (tileLayer.name === 'top') map.topTiles = arr;
-        else if (tileLayer.name === 'collision') map.collisionGrid = new Uint8Array(tileLayer.data);
-        else if (tileLayer.name === 'behavior') map.behaviorGrid = new Uint16Array(tileLayer.data);
+        else if (tileLayer.name === 'collision') {
+          // Reverse GID remap: collision_firstgid → 1, 0 stays 0
+          const grid = new Uint8Array(tileLayer.data.length);
+          for (let i = 0; i < tileLayer.data.length; i++) {
+            const v = tileLayer.data[i];
+            grid[i] = (collisionFirstGid && v >= collisionFirstGid) ? 1 : (v ? 1 : 0);
+          }
+          map.collisionGrid = grid;
+        }
+        else if (tileLayer.name === 'behavior') {
+          // Reverse GID remap: behavior_firstgid + value → value, 0 stays 0
+          const grid = new Uint16Array(tileLayer.data.length);
+          for (let i = 0; i < tileLayer.data.length; i++) {
+            const v = tileLayer.data[i];
+            grid[i] = (behaviorFirstGid && v >= behaviorFirstGid) ? v - behaviorFirstGid : v;
+          }
+          map.behaviorGrid = grid;
+        }
       } else if (layer.type === 'objectgroup') {
         const objLayer = layer as TiledObjectLayer;
         if (objLayer.name === 'warps') {
@@ -129,47 +144,4 @@ export class MapData {
     return map;
   }
 
-  toTiledJSON(): TiledMap {
-    return {
-      width: this.width,
-      height: this.height,
-      tilewidth: 16,
-      tileheight: 16,
-      orientation: 'orthogonal',
-      renderorder: 'right-down',
-      infinite: false,
-      layers: [
-        {
-          name: 'bottom', type: 'tilelayer',
-          width: this.width, height: this.height,
-          data: Array.from(this.bottomTiles),
-          visible: true, opacity: 1, x: 0, y: 0,
-        },
-        {
-          name: 'top', type: 'tilelayer',
-          width: this.width, height: this.height,
-          data: Array.from(this.topTiles),
-          visible: true, opacity: 1, x: 0, y: 0,
-        },
-        {
-          name: 'collision', type: 'tilelayer',
-          width: this.width, height: this.height,
-          data: Array.from(this.collisionGrid),
-          visible: false, opacity: 1, x: 0, y: 0,
-        },
-        {
-          name: 'warps', type: 'objectgroup',
-          objects: this.warps.map(w => ({
-            id: w.id, name: w.destMap, type: 'warp',
-            x: w.x * 16, y: w.y * 16, width: 16, height: 16,
-            properties: [
-              { name: 'destMap', type: 'string' as const, value: w.destMap },
-              { name: 'destWarpId', type: 'int' as const, value: w.destWarpId },
-            ],
-          })),
-        },
-      ],
-      tilesets: [],
-    };
-  }
 }
