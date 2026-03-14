@@ -211,16 +211,15 @@ def process_tileset(tileset_dir: Path, name: str, output_dir: Path,
     if primary_tiles is not None:
         # Secondary tileset: combine primary tiles (0-639) + own tiles (640+)
         combined_tiles = build_combined_tiles(primary_tiles, own_tiles)
-        # Merge palettes: primary palettes as base, secondary palettes override
-        # In the GBA, palettes 0-5 typically come from primary, 6-12 from secondary
-        # But the simplest approach: use all 16 palettes from this tileset, supplemented
-        # by primary palettes for any that are all-transparent
+        # Merge palettes matching GBA hardware allocation:
+        # Palettes 0-6 (NUM_PALS_IN_PRIMARY=7) always come from the primary tileset.
+        # Palettes 7-12 come from the secondary tileset.
+        # Palettes 13-15 are unused/available.
+        NUM_PALS_IN_PRIMARY = 7
         combined_palettes = list(own_palettes)
         if primary_palettes:
-            for i in range(16):
-                # If this tileset's palette is all transparent/empty, use primary's
-                if all(c == (0, 0, 0, 0) for c in combined_palettes[i]):
-                    combined_palettes[i] = primary_palettes[i]
+            for i in range(NUM_PALS_IN_PRIMARY):
+                combined_palettes[i] = primary_palettes[i]
     else:
         # Primary tileset: just use own tiles
         combined_tiles = own_tiles

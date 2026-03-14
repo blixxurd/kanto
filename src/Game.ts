@@ -18,6 +18,10 @@ import { PlayerController } from './entities/PlayerController';
 import { TileAnimator } from './world/TileAnimator';
 import { GrassEffect } from './effects/GrassEffect';
 import { LandingDustEffect } from './effects/LandingDustEffect';
+import { SurfEffect } from './effects/SurfEffect';
+import { MenuStack } from './ui/MenuStack';
+import { DebugMenu } from './ui/menus/DebugMenu';
+import type { GameActions } from './ui/menus/DebugMenu';
 import { TILE_SIZE } from './utils/TileCoords';
 
 export class Game {
@@ -43,8 +47,10 @@ export class Game {
   private grassEffect!: GrassEffect;
   private landingDust!: LandingDustEffect;
   private doorAnimator!: DoorAnimator;
+  private surfEffect!: SurfEffect;
   private screenManager!: ScreenManager;
   private debugOverlay!: DebugOverlay;
+  private menuStack!: MenuStack;
 
   private zoneNameText!: Text;
   private zoneNameTimer = 0;
@@ -115,6 +121,10 @@ export class Game {
     this.doorAnimator = new DoorAnimator(this.tilemapRenderer.entityLayer);
     await this.doorAnimator.load();
 
+    // Surf effect
+    this.surfEffect = new SurfEffect(this.tilemapRenderer.entityLayer);
+    await this.surfEffect.load();
+
     // Load overworld
     if (import.meta.env.DEV) console.log('Loading overworld...');
     await this.mapManager.init();
@@ -130,6 +140,7 @@ export class Game {
     this.player = new Player(this.tilemapRenderer.entityLayer);
     try {
       await this.player.loadSprite('./sprites/player_male.png', './sprites/player.json');
+      await this.player.loadSurfSprite('./sprites/player_surf.png');
     } catch (e) {
       console.warn('Failed to load player sprite:', e);
     }
@@ -178,6 +189,41 @@ export class Game {
     this.debugOverlay.load(activeMap);
     this.debugOverlay.attachTooltip(this.uiContainer);
     this.input.onKeyDown('F3', () => this.debugOverlay.toggle());
+
+    // Menu stack
+    this.menuStack = new MenuStack(this.uiContainer);
+    const gameActions: GameActions = {
+      teleport: (x, y) => {
+        this.player.setTilePosition(x, y);
+        this.camera.panTo(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2);
+      },
+      getPlayerPos: () => ({ x: this.player.tileX, y: this.player.tileY }),
+      getZone: () => this.zoneSystem.getCurrentZone(),
+      getScale: () => this.screenManager.getScale(),
+      setScale: (s) => this.screenManager.setScale(s),
+      toggleDebugOverlay: () => this.debugOverlay.toggle(),
+      getDebugMode: () => this.debugOverlay.getMode(),
+      getZones: () => this.zoneSystem.getZones(),
+      getSurfing: () => this.collisionMap.surfing,
+      setSurfing: (v) => {
+        this.collisionMap.surfing = v;
+        if (v) {
+          this.player.enterSurf();
+          this.surfEffect.start();
+        } else {
+          this.player.exitSurf();
+          this.surfEffect.stop();
+        }
+      },
+    };
+    this.input.onKeyDown('`', () => {
+      if (this.state === 'playing') {
+        this.menuStack.push(new DebugMenu(gameActions, this.screenManager.getScale(), this.menuStack));
+        this.state = 'menu';
+      } else if (this.state === 'menu') {
+        this.menuStack.clear();
+      }
+    });
 
     // Warp handler
     this.warpSystem.onWarp.on((event) => this.handleWarp(event));
@@ -249,6 +295,14 @@ export class Game {
           this.playerController.tryStartMove();
         }
 
+        // Surf effect: update blob position + get player bob offset
+        if (this.surfEffect.active) {
+          this.player.surfOffset = this.surfEffect.update(
+            this.player.pixelX, this.player.pixelY, this.player.direction,
+          );
+          this.player.updateSpritePosition();
+        }
+
         this.camera.follow(this.player.getCenterPixel());
         this.camera.update();
         this.grassEffect.update(this.player.tileX, this.player.tileY);
@@ -256,6 +310,12 @@ export class Game {
         this.zoneSystem.update(this.player.tileX, this.player.tileY);
         break;
       }
+      case 'menu':
+        this.menuStack.handleInput(this.input);
+        this.menuStack.update();
+        if (this.menuStack.isEmpty()) this.state = 'playing';
+        break;
+
       case 'transitioning':
         // Transition update is driven by the main loop.
         // Camera and effects keep running so door walk animations render properly.

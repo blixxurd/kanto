@@ -15,6 +15,8 @@ export class Player {
   pixelY = 0;
   /** Vertical pixel offset during jumps (negative = up). */
   jumpOffset = 0;
+  /** Vertical pixel offset from surf bobbing. */
+  surfOffset = 0;
   direction: Direction = 'down';
   sprite: Sprite;
 
@@ -27,6 +29,14 @@ export class Player {
   private frameIndex = 0;
   private frameTick = 0;
   private textures: Texture[] = [];
+
+  /** Saved normal sprite data for swapping back from surf. */
+  private normalTextures: Texture[] = [];
+  private normalAnims = new Map<string, AnimDef>();
+  /** Surf sprite data. */
+  private surfTextures: Texture[] = [];
+  private surfAnims = new Map<string, AnimDef>();
+  private _isSurfing = false;
 
   constructor(container: Container) {
     this.container = container;
@@ -122,7 +132,7 @@ export class Player {
 
   updateSpritePosition(): void {
     this.sprite.x = this.pixelX;
-    this.sprite.y = this.pixelY + TILE_SIZE + this.jumpOffset;
+    this.sprite.y = this.pixelY + TILE_SIZE + this.jumpOffset + this.surfOffset;
     // zIndex for depth sorting with grass/field effects (based on ground position, not visual)
     this.sprite.zIndex = this.pixelY + TILE_SIZE;
 
@@ -145,5 +155,69 @@ export class Player {
       x: this.pixelX + TILE_SIZE / 2,
       y: this.pixelY + TILE_SIZE / 2,
     };
+  }
+
+  get isSurfing(): boolean {
+    return this._isSurfing;
+  }
+
+  /** Pre-load the surf spritesheet so swapping is instant. */
+  async loadSurfSprite(sheetPath: string): Promise<void> {
+    try {
+      const tex = await Assets.load(sheetPath) as Texture;
+      tex.source.scaleMode = 'nearest';
+
+      // Surf sheet: 1 column × 4 rows (down, up, left, right), 16x32 each
+      const fw = 16, fh = 32;
+      const rows = Math.floor(tex.source.height / fh);
+      this.surfTextures = [];
+      for (let r = 0; r < rows; r++) {
+        this.surfTextures.push(new Texture({
+          source: tex.source,
+          frame: new Rectangle(0, r * fh, fw, fh),
+        }));
+      }
+
+      // Surf animations: single static frame per direction (GBA surf has no walk cycle)
+      this.surfAnims.clear();
+      this.surfAnims.set('idle_down',  { frames: [0], frameDuration: 1, loop: false });
+      this.surfAnims.set('idle_up',    { frames: [1], frameDuration: 1, loop: false });
+      this.surfAnims.set('idle_left',  { frames: [2], frameDuration: 1, loop: false });
+      this.surfAnims.set('idle_right', { frames: [3], frameDuration: 1, loop: false });
+      // Walk/run use the same static frame (GBA surf anims are identical for all speeds)
+      for (const prefix of ['walk', 'run']) {
+        this.surfAnims.set(`${prefix}_down`,  { frames: [0], frameDuration: 1, loop: false });
+        this.surfAnims.set(`${prefix}_up`,    { frames: [1], frameDuration: 1, loop: false });
+        this.surfAnims.set(`${prefix}_left`,  { frames: [2], frameDuration: 1, loop: false });
+        this.surfAnims.set(`${prefix}_right`, { frames: [3], frameDuration: 1, loop: false });
+      }
+    } catch (e) {
+      console.warn('Failed to load surf sprite:', e);
+    }
+  }
+
+  /** Swap to surfing sprite. */
+  enterSurf(): void {
+    if (this._isSurfing || this.surfTextures.length === 0) return;
+    // Save normal state
+    this.normalTextures = this.textures;
+    this.normalAnims = new Map(this.animations);
+    // Swap to surf
+    this.textures = this.surfTextures;
+    this.animations = this.surfAnims;
+    this._isSurfing = true;
+    this.currentAnim = '';
+    this.playAnimation(`idle_${this.direction}`);
+  }
+
+  /** Swap back to normal walking sprite. */
+  exitSurf(): void {
+    if (!this._isSurfing) return;
+    this.textures = this.normalTextures;
+    this.animations = this.normalAnims;
+    this._isSurfing = false;
+    this.surfOffset = 0;
+    this.currentAnim = '';
+    this.playAnimation(`idle_${this.direction}`);
   }
 }

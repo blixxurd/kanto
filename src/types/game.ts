@@ -1,5 +1,5 @@
 export type Direction = 'up' | 'down' | 'left' | 'right';
-export type GameState = 'booting' | 'playing' | 'transitioning';
+export type GameState = 'booting' | 'playing' | 'transitioning' | 'menu';
 
 /**
  * Warp type based on metatile behavior (from GBA field_control_avatar.c).

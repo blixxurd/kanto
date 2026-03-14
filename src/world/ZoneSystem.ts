@@ -25,4 +25,8 @@ export class ZoneSystem {
   getCurrentZone(): Zone | null {
     return this.currentZone;
   }
+
+  getZones(): Zone[] {
+    return this.mapData?.zones ?? [];
+  }
 }
