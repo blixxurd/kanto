@@ -24,6 +24,7 @@ export interface GameActions {
   setSurfing(v: boolean): void;
   getAvailableSprites(): SpriteInfo[];
   setSprite(sheet: string): void;
+  setOverheadIcon(icon: string | null): void;
 }
 
 export class DebugMenu implements Menu {
@@ -39,7 +40,7 @@ export class DebugMenu implements Menu {
     this.menuStack = menuStack;
     this.pixelScale = pixelScale;
 
-    this.panel = new UIPanel(130, 99, pixelScale, 'DEBUG');
+    this.panel = new UIPanel(130, 111, pixelScale, 'DEBUG');
     this.container.addChild(this.panel);
 
     const overlay = actions.getDebugMode();
@@ -55,11 +56,15 @@ export class DebugMenu implements Menu {
         action: () => this.openSpriteMenu(),
       },
       {
+        label: 'Overhead...',
+        action: () => this.openOverheadMenu(),
+      },
+      {
         label: 'Surf',
         value: actions.getSurfing() ? 'ON' : 'OFF',
         action: () => {
           actions.setSurfing(!actions.getSurfing());
-          this.list.updateValue(2, actions.getSurfing() ? 'ON' : 'OFF');
+          this.list.updateValue(3, actions.getSurfing() ? 'ON' : 'OFF');
         },
       },
       {
@@ -67,7 +72,7 @@ export class DebugMenu implements Menu {
         value: overlay,
         action: () => {
           actions.toggleDebugOverlay();
-          this.list.updateValue(3, actions.getDebugMode());
+          this.list.updateValue(4, actions.getDebugMode());
         },
       },
       {
@@ -77,7 +82,7 @@ export class DebugMenu implements Menu {
           const s = actions.getScale();
           const next = s >= 8 ? 1 : s + 1;
           actions.setScale(next);
-          this.list.updateValue(4, `${next}x`);
+          this.list.updateValue(5, `${next}x`);
         },
       },
       {
@@ -120,6 +125,10 @@ export class DebugMenu implements Menu {
 
   private openSpriteMenu(): void {
     this.menuStack.push(new SpriteMenu(this.actions, this.pixelScale, this.menuStack));
+  }
+
+  private openOverheadMenu(): void {
+    this.menuStack.push(new OverheadMenu(this.actions, this.pixelScale, this.menuStack));
   }
 
   private showInfo(): void {
@@ -216,6 +225,72 @@ class TeleportMenu implements Menu {
           const cx = z.bounds.x + Math.floor(z.bounds.width / 2);
           const cy = z.bounds.y + Math.floor(z.bounds.height / 2);
           actions.teleport(cx, cy);
+          menuStack.clear();
+        },
+      })),
+      maxVisible,
+    );
+
+    const content = this.panel.getContentArea();
+    this.list.x = content.x;
+    this.list.y = content.y;
+    this.panel.addChild(this.list);
+  }
+
+  onPush(): void {
+    this.centerPanel();
+  }
+  onPop(): void {}
+
+  handleInput(input: Input): void {
+    if (input.justPressed('Escape') || input.justPressed('x') || input.justPressed('X')) {
+      this.menuStack.pop();
+      return;
+    }
+    this.list.handleInput(input);
+  }
+
+  update(): void {
+    this.centerPanel();
+  }
+
+  private centerPanel(): void {
+    this.panel.centerOnScreen(window.innerWidth, window.innerHeight);
+  }
+}
+
+const OVERHEAD_ICONS = [
+  'none',
+  'exclamation',
+  'question_yellow',
+  'question_blue',
+  'question_gray',
+  'speech',
+  'speech_full',
+  'sleep',
+  'treasure',
+  'star',
+];
+
+class OverheadMenu implements Menu {
+  container = new Container();
+  private panel: UIPanel;
+  private list: UIList;
+  private menuStack: MenuStack;
+
+  constructor(actions: GameActions, pixelScale: number, menuStack: MenuStack) {
+    this.menuStack = menuStack;
+
+    const maxVisible = OVERHEAD_ICONS.length;
+    const listHeight = maxVisible * 12 + 12;
+    this.panel = new UIPanel(140, listHeight, pixelScale, 'OVERHEAD');
+    this.container.addChild(this.panel);
+
+    this.list = new UIList(
+      OVERHEAD_ICONS.map((icon) => ({
+        label: icon.replace(/_/g, ' '),
+        action: () => {
+          actions.setOverheadIcon(icon === 'none' ? null : icon);
           menuStack.clear();
         },
       })),

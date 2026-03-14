@@ -228,6 +228,13 @@ export class Game {
       getZones: () => this.zoneSystem.getZones(),
       getAvailableSprites: () => this.npcSprites,
       setSprite: (sheet) => { this.player.swapSprite(sheet); },
+      setOverheadIcon: (icon) => {
+        if (icon) {
+          this.player.showOverheadIcon(icon as any);
+        } else {
+          this.player.hideOverheadIcon();
+        }
+      },
       getSurfing: () => this.collisionMap.surfing,
       setSurfing: (v) => {
         this.collisionMap.surfing = v;

@@ -1,34 +1,15 @@
 import { Sprite, Texture, Rectangle, Container, Assets } from 'pixi.js';
 import type { Direction } from '../types/game';
+import { Entity, type AnimDef } from './Entity';
 import { TILE_SIZE } from '../utils/TileCoords';
 
-interface AnimDef {
-  frames: number[];
-  frameDuration: number;
-  loop: boolean;
-}
-
-export class Player {
-  tileX = 0;
-  tileY = 0;
-  pixelX = 0;
-  pixelY = 0;
+export class Player extends Entity {
   /** Vertical pixel offset during jumps (negative = up). */
   jumpOffset = 0;
   /** Vertical pixel offset from surf bobbing. */
   surfOffset = 0;
-  direction: Direction = 'down';
-  sprite: Sprite;
 
   private shadow: Sprite;
-  private container: Container;
-  private frameW = 16;
-  private frameH = 32;
-  private animations = new Map<string, AnimDef>();
-  private currentAnim = '';
-  private frameIndex = 0;
-  private frameTick = 0;
-  private textures: Texture[] = [];
 
   /** Saved normal sprite data for swapping back from surf. */
   private normalTextures: Texture[] = [];
@@ -39,15 +20,13 @@ export class Player {
   private _isSurfing = false;
 
   constructor(container: Container) {
-    this.container = container;
+    super(container);
     this.shadow = new Sprite();
     this.shadow.anchor.set(0.5, 0.5);
     this.shadow.visible = false;
-    container.addChild(this.shadow);
-
-    this.sprite = new Sprite();
-    this.sprite.anchor.set(0, 1);
-    container.addChild(this.sprite);
+    // Insert shadow before the main sprite
+    const spriteIdx = container.getChildIndex(this.sprite);
+    container.addChildAt(this.shadow, spriteIdx);
   }
 
   async loadSprite(sheetPath: string, animPath: string): Promise<void> {
@@ -61,17 +40,7 @@ export class Player {
 
     this.frameW = animData.frameWidth;
     this.frameH = animData.frameHeight;
-
-    // Build frame textures from the sheet
-    const cols = Math.floor(source.width / this.frameW);
-    const rows = Math.floor(source.height / this.frameH);
-    this.textures = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const frame = new Rectangle(c * this.frameW, r * this.frameH, this.frameW, this.frameH);
-        this.textures.push(new Texture({ source, frame }));
-      }
-    }
+    this.textures = this.sliceSheet(source, this.frameW, this.frameH);
 
     // Load animations
     for (const [name, def] of Object.entries(animData.animations)) {
@@ -90,47 +59,7 @@ export class Player {
     }
   }
 
-  playAnimation(name: string): void {
-    if (name === this.currentAnim) return;
-    this.currentAnim = name;
-    this.frameIndex = 0;
-    this.frameTick = 0;
-    this.updateFrame();
-  }
-
-  updateAnimation(): void {
-    const anim = this.animations.get(this.currentAnim);
-    if (!anim) return;
-
-    this.frameTick++;
-    if (this.frameTick >= anim.frameDuration) {
-      this.frameTick = 0;
-      this.frameIndex++;
-      if (this.frameIndex >= anim.frames.length) {
-        this.frameIndex = anim.loop ? 0 : anim.frames.length - 1;
-      }
-      this.updateFrame();
-    }
-  }
-
-  private updateFrame(): void {
-    const anim = this.animations.get(this.currentAnim);
-    if (!anim) return;
-    const texIdx = anim.frames[this.frameIndex];
-    if (texIdx < this.textures.length) {
-      this.sprite.texture = this.textures[texIdx];
-    }
-  }
-
-  setTilePosition(x: number, y: number): void {
-    this.tileX = x;
-    this.tileY = y;
-    this.pixelX = x * TILE_SIZE;
-    this.pixelY = y * TILE_SIZE;
-    this.updateSpritePosition();
-  }
-
-  updateSpritePosition(): void {
+  override updateSpritePosition(): void {
     this.sprite.x = this.pixelX;
     this.sprite.y = this.pixelY + TILE_SIZE + this.jumpOffset + this.surfOffset;
     // zIndex for depth sorting with grass/field effects (based on ground position, not visual)
@@ -144,17 +73,8 @@ export class Player {
       this.shadow.y = this.pixelY + TILE_SIZE;
       this.shadow.zIndex = this.pixelY + TILE_SIZE - 1;
     }
-  }
 
-  setVisible(visible: boolean): void {
-    this.sprite.visible = visible;
-  }
-
-  getCenterPixel(): { x: number; y: number } {
-    return {
-      x: this.pixelX + TILE_SIZE / 2,
-      y: this.pixelY + TILE_SIZE / 2,
-    };
+    this.updateOverhead();
   }
 
   get isSurfing(): boolean {
@@ -162,24 +82,14 @@ export class Player {
   }
 
   /**
-   * Swap the walking sprite to a different spritesheet (same 3×4 layout as player).
+   * Swap the walking sprite to a different spritesheet (same 3x4 layout as player).
    * Preserves existing animation definitions since NPC sheets use identical frame order.
    */
   async swapSprite(sheetPath: string): Promise<void> {
     const tex = await Assets.load(sheetPath) as Texture;
     tex.source.scaleMode = 'nearest';
 
-    const cols = Math.floor(tex.source.width / this.frameW);
-    const rows = Math.floor(tex.source.height / this.frameH);
-    const newTextures: Texture[] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        newTextures.push(new Texture({
-          source: tex.source,
-          frame: new Rectangle(c * this.frameW, r * this.frameH, this.frameW, this.frameH),
-        }));
-      }
-    }
+    const newTextures = this.sliceSheet(tex.source, this.frameW, this.frameH);
     this.textures = newTextures;
     // Also update normalTextures so exiting surf returns to new sprite
     this.normalTextures = newTextures;
@@ -193,7 +103,7 @@ export class Player {
       const tex = await Assets.load(sheetPath) as Texture;
       tex.source.scaleMode = 'nearest';
 
-      // Surf sheet: 1 column × 4 rows (down, up, left, right), 16x32 each
+      // Surf sheet: 1 column x 4 rows (down, up, left, right), 16x32 each
       const fw = 16, fh = 32;
       const rows = Math.floor(tex.source.height / fh);
       this.surfTextures = [];

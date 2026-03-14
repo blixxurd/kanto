@@ -1,6 +1,7 @@
 import { Container } from 'pixi.js';
 import { NPC } from './NPC';
 import { NPCController } from './NPCController';
+import type { OverheadIcon } from './Entity';
 import { CollisionMap } from '../world/CollisionMap';
 import { MapData } from '../world/MapData';
 import { Player } from './Player';
@@ -64,6 +65,13 @@ export class NPCManager {
     }
 
     await Promise.all(loads);
+
+    // Show overhead icons
+    for (const npc of this.npcs) {
+      if (npc.def.overheadIcon) {
+        npc.showOverheadIcon(npc.def.overheadIcon as OverheadIcon);
+      }
+    }
   }
 
   despawn(): void {
@@ -77,6 +85,7 @@ export class NPCManager {
     for (let i = 0; i < this.controllers.length; i++) {
       this.controllers[i].update();
       this.npcs[i].updateAnimation();
+      this.npcs[i].updateOverhead();
     }
   }
 

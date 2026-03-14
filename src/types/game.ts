@@ -60,4 +60,5 @@ export interface NPCDef {
   movement: MovementPattern;
   paceAxis?: 'horizontal' | 'vertical';
   paceDistance?: number;
+  overheadIcon?: string;
 }

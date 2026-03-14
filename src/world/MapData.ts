@@ -133,6 +133,7 @@ export class MapData {
               movement: (String(props.movement ?? 'standing')) as NPCDef['movement'],
               ...(props.paceAxis ? { paceAxis: String(props.paceAxis) as 'horizontal' | 'vertical' } : {}),
               ...(props.paceDistance != null ? { paceDistance: Number(props.paceDistance) } : {}),
+              ...(props.overheadIcon ? { overheadIcon: String(props.overheadIcon) } : {}),
             };
           });
         } else if (objLayer.name === 'zones') {
