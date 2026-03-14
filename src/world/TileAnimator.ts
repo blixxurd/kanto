@@ -70,9 +70,13 @@ export class TileAnimator {
     if (!this.manifest) return;
 
     // Build a lookup: tileset source filename → firstgid
+    // Handle both bare filenames (general.tsj) and relative paths (../tilesets/general.tsj)
     const sourceToFirstgid = new Map<string, number>();
     for (const ref of tilesetRefs) {
       sourceToFirstgid.set(ref.source, ref.firstgid);
+      // Also key by bare filename for animation matching
+      const bare = ref.source.split('/').pop() ?? ref.source;
+      if (bare !== ref.source) sourceToFirstgid.set(bare, ref.firstgid);
     }
 
     // Also build firstgid → TextureSource from tileTextures
