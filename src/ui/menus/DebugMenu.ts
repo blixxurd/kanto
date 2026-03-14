@@ -6,6 +6,11 @@ import { UIPanel } from '../UIPanel';
 import { UIList } from '../UIList';
 import { createText } from '../UIText';
 
+export interface SpriteInfo {
+  name: string;
+  sheet: string;
+}
+
 export interface GameActions {
   teleport(x: number, y: number): void;
   getPlayerPos(): { x: number; y: number };
@@ -17,6 +22,8 @@ export interface GameActions {
   getZones(): Zone[];
   getSurfing(): boolean;
   setSurfing(v: boolean): void;
+  getAvailableSprites(): SpriteInfo[];
+  setSprite(sheet: string): void;
 }
 
 export class DebugMenu implements Menu {
@@ -32,7 +39,7 @@ export class DebugMenu implements Menu {
     this.menuStack = menuStack;
     this.pixelScale = pixelScale;
 
-    this.panel = new UIPanel(130, 87, pixelScale, 'DEBUG');
+    this.panel = new UIPanel(130, 99, pixelScale, 'DEBUG');
     this.container.addChild(this.panel);
 
     const overlay = actions.getDebugMode();
@@ -44,11 +51,15 @@ export class DebugMenu implements Menu {
         action: () => this.openTeleportMenu(),
       },
       {
+        label: 'Sprite...',
+        action: () => this.openSpriteMenu(),
+      },
+      {
         label: 'Surf',
         value: actions.getSurfing() ? 'ON' : 'OFF',
         action: () => {
           actions.setSurfing(!actions.getSurfing());
-          this.list.updateValue(1, actions.getSurfing() ? 'ON' : 'OFF');
+          this.list.updateValue(2, actions.getSurfing() ? 'ON' : 'OFF');
         },
       },
       {
@@ -56,7 +67,7 @@ export class DebugMenu implements Menu {
         value: overlay,
         action: () => {
           actions.toggleDebugOverlay();
-          this.list.updateValue(2, actions.getDebugMode());
+          this.list.updateValue(3, actions.getDebugMode());
         },
       },
       {
@@ -66,7 +77,7 @@ export class DebugMenu implements Menu {
           const s = actions.getScale();
           const next = s >= 8 ? 1 : s + 1;
           actions.setScale(next);
-          this.list.updateValue(3, `${next}x`);
+          this.list.updateValue(4, `${next}x`);
         },
       },
       {
@@ -107,8 +118,74 @@ export class DebugMenu implements Menu {
     this.menuStack.push(new TeleportMenu(this.actions, this.pixelScale, this.menuStack));
   }
 
+  private openSpriteMenu(): void {
+    this.menuStack.push(new SpriteMenu(this.actions, this.pixelScale, this.menuStack));
+  }
+
   private showInfo(): void {
     this.menuStack.push(new InfoMenu(this.actions, this.pixelScale, this.menuStack));
+  }
+}
+
+class SpriteMenu implements Menu {
+  container = new Container();
+  private panel: UIPanel;
+  private list: UIList;
+  private menuStack: MenuStack;
+
+  constructor(actions: GameActions, pixelScale: number, menuStack: MenuStack) {
+    this.menuStack = menuStack;
+
+    const sprites = actions.getAvailableSprites();
+    const maxVisible = 10;
+    const listHeight = maxVisible * 12 + 12;
+    this.panel = new UIPanel(140, listHeight, pixelScale, 'SPRITE');
+    this.container.addChild(this.panel);
+
+    // "Default" option to reset to player sprite
+    const items = [
+      {
+        label: 'Default (Red)',
+        action: () => {
+          actions.setSprite('./sprites/player_male.png');
+          menuStack.clear();
+        },
+      },
+      ...sprites.map((s) => ({
+        label: s.name.replace(/_/g, ' '),
+        action: () => {
+          actions.setSprite(s.sheet);
+          menuStack.clear();
+        },
+      })),
+    ];
+
+    this.list = new UIList(items, maxVisible);
+    const content = this.panel.getContentArea();
+    this.list.x = content.x;
+    this.list.y = content.y;
+    this.panel.addChild(this.list);
+  }
+
+  onPush(): void {
+    this.centerPanel();
+  }
+  onPop(): void {}
+
+  handleInput(input: Input): void {
+    if (input.justPressed('Escape') || input.justPressed('x') || input.justPressed('X')) {
+      this.menuStack.pop();
+      return;
+    }
+    this.list.handleInput(input);
+  }
+
+  update(): void {
+    this.centerPanel();
+  }
+
+  private centerPanel(): void {
+    this.panel.centerOnScreen(window.innerWidth, window.innerHeight);
   }
 }
 
@@ -127,7 +204,8 @@ class TeleportMenu implements Menu {
       (z) => z.mapType === 'MAP_TYPE_TOWN' || z.mapType === 'MAP_TYPE_CITY',
     );
 
-    const listHeight = towns.length * 12 + 12;
+    const maxVisible = Math.min(towns.length, 10);
+    const listHeight = maxVisible * 12 + 12;
     this.panel = new UIPanel(140, listHeight, pixelScale, 'TELEPORT');
     this.container.addChild(this.panel);
 
@@ -141,6 +219,7 @@ class TeleportMenu implements Menu {
           menuStack.clear();
         },
       })),
+      maxVisible,
     );
 
     const content = this.panel.getContentArea();

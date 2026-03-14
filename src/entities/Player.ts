@@ -161,6 +161,32 @@ export class Player {
     return this._isSurfing;
   }
 
+  /**
+   * Swap the walking sprite to a different spritesheet (same 3×4 layout as player).
+   * Preserves existing animation definitions since NPC sheets use identical frame order.
+   */
+  async swapSprite(sheetPath: string): Promise<void> {
+    const tex = await Assets.load(sheetPath) as Texture;
+    tex.source.scaleMode = 'nearest';
+
+    const cols = Math.floor(tex.source.width / this.frameW);
+    const rows = Math.floor(tex.source.height / this.frameH);
+    const newTextures: Texture[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        newTextures.push(new Texture({
+          source: tex.source,
+          frame: new Rectangle(c * this.frameW, r * this.frameH, this.frameW, this.frameH),
+        }));
+      }
+    }
+    this.textures = newTextures;
+    // Also update normalTextures so exiting surf returns to new sprite
+    this.normalTextures = newTextures;
+    this.currentAnim = '';
+    this.playAnimation(`idle_${this.direction}`);
+  }
+
   /** Pre-load the surf spritesheet so swapping is instant. */
   async loadSurfSprite(sheetPath: string): Promise<void> {
     try {

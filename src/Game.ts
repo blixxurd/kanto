@@ -21,7 +21,7 @@ import { LandingDustEffect } from './effects/LandingDustEffect';
 import { SurfEffect } from './effects/SurfEffect';
 import { MenuStack } from './ui/MenuStack';
 import { DebugMenu } from './ui/menus/DebugMenu';
-import type { GameActions } from './ui/menus/DebugMenu';
+import type { GameActions, SpriteInfo } from './ui/menus/DebugMenu';
 import { TILE_SIZE } from './utils/TileCoords';
 
 export class Game {
@@ -51,6 +51,8 @@ export class Game {
   private screenManager!: ScreenManager;
   private debugOverlay!: DebugOverlay;
   private menuStack!: MenuStack;
+
+  private npcSprites: SpriteInfo[] = [];
 
   private zoneNameText!: Text;
   private zoneNameTimer = 0;
@@ -144,6 +146,18 @@ export class Game {
     } catch (e) {
       console.warn('Failed to load player sprite:', e);
     }
+    // Load NPC sprite manifest for debug sprite swap
+    try {
+      const manifest = await this.assetLoader.loadJSON<{
+        sprites: Record<string, { sheet: string; frameWidth: number; frameHeight: number; animated: boolean }>;
+      }>('./sprites/npcs/manifest.json');
+      this.npcSprites = Object.entries(manifest.sprites)
+        .filter(([, v]) => v.animated && v.frameWidth === 16 && v.frameHeight === 32)
+        .map(([name, v]) => ({ name, sheet: `./sprites/npcs/${v.sheet}` }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+      console.warn('Failed to load NPC sprite manifest:', e);
+    }
     this.playerController = new PlayerController(this.player, this.input, this.collisionMap);
     this.playerController.onStep = (tx, ty, mf) => this.grassEffect.onStep(tx, ty, mf);
     this.playerController.onLand = (tx, ty) => {
@@ -204,6 +218,8 @@ export class Game {
       toggleDebugOverlay: () => this.debugOverlay.toggle(),
       getDebugMode: () => this.debugOverlay.getMode(),
       getZones: () => this.zoneSystem.getZones(),
+      getAvailableSprites: () => this.npcSprites,
+      setSprite: (sheet) => { this.player.swapSprite(sheet); },
       getSurfing: () => this.collisionMap.surfing,
       setSurfing: (v) => {
         this.collisionMap.surfing = v;
