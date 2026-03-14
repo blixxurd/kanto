@@ -19,6 +19,7 @@ import { TileAnimator } from './world/TileAnimator';
 import { GrassEffect } from './effects/GrassEffect';
 import { LandingDustEffect } from './effects/LandingDustEffect';
 import { SurfEffect } from './effects/SurfEffect';
+import { NPCManager } from './entities/NPCManager';
 import { MenuStack } from './ui/MenuStack';
 import { DebugMenu } from './ui/menus/DebugMenu';
 import type { GameActions, SpriteInfo } from './ui/menus/DebugMenu';
@@ -48,6 +49,7 @@ export class Game {
   private landingDust!: LandingDustEffect;
   private doorAnimator!: DoorAnimator;
   private surfEffect!: SurfEffect;
+  private npcManager!: NPCManager;
   private screenManager!: ScreenManager;
   private debugOverlay!: DebugOverlay;
   private menuStack!: MenuStack;
@@ -167,6 +169,12 @@ export class Game {
     };
     this.grassEffect.setMap(activeMap);
 
+    // NPCs
+    this.npcManager = new NPCManager();
+    await this.npcManager.loadManifest();
+    await this.npcManager.spawn(activeMap, this.tilemapRenderer.entityLayer, this.collisionMap, this.player);
+    this.collisionMap.setEntityCheck((x, y) => this.npcManager.isOccupied(x, y));
+
     // Find a passable spawn point in Pallet Town
     const zones = await this.assetLoader.loadJSON<{ zones: Array<{ id: string; bounds: { x: number; y: number; width: number; height: number } }> }>('./data/overworld_zones.json');
     const pallet = zones.zones.find(z => z.id === 'MAP_PALLET_TOWN');
@@ -255,7 +263,9 @@ export class Game {
 
     // Start
     this.state = 'playing';
-    this.app.ticker.add(() => this.update());
+    this.app.ticker.add(() => {
+      for (let i = 0; i < 2; i++) this.update();
+    });
     if (import.meta.env.DEV) console.log('Kanto engine initialized');
 
     // Debug API
@@ -310,6 +320,9 @@ export class Game {
         if (this.state === 'playing') {
           this.playerController.tryStartMove();
         }
+
+        // NPC movement + animation
+        this.npcManager.update();
 
         // Surf effect: update blob position + get player bob offset
         if (this.surfEffect.active) {
@@ -553,6 +566,7 @@ export class Game {
 
   /** Load destination map and set up player position. */
   private async loadWarpDestination(destMap: string, destWarpId: number, sourceX?: number, sourceY?: number): Promise<void> {
+    this.npcManager.despawn();
     const spawnPos = await this.mapManager.followWarp(destMap, destWarpId, sourceX, sourceY);
 
     const activeMap = this.mapManager.getActiveMap()!;
@@ -582,6 +596,9 @@ export class Game {
 
     await this.setupAnimations();
     this.debugOverlay.load(activeMap);
+
+    // Spawn NPCs for the new map
+    await this.npcManager.spawn(activeMap, this.tilemapRenderer.entityLayer, this.collisionMap, this.player);
 
     // Tell warp system we're already on this tile so it won't re-trigger
     this.warpSystem.setPosition(spawnPos.x, spawnPos.y, this.player.direction);

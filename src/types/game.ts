@@ -47,3 +47,17 @@ export interface Connection {
   map: string;
   offset: number;
 }
+
+export type MovementPattern = 'standing' | 'look_around' | 'wander' | 'pace' | 'mega_wander';
+
+export interface NPCDef {
+  id: number;
+  name: string;
+  x: number;
+  y: number;
+  sprite: string;
+  direction: Direction;
+  movement: MovementPattern;
+  paceAxis?: 'horizontal' | 'vertical';
+  paceDistance?: number;
+}

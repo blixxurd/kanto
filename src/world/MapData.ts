@@ -1,5 +1,5 @@
 import type { TiledMap, TiledTileLayer, TiledObjectLayer } from '../types/tiled';
-import type { Warp, Zone } from '../types/game';
+import type { Warp, Zone, NPCDef, Direction } from '../types/game';
 
 export class MapData {
   readonly id: string;
@@ -11,6 +11,7 @@ export class MapData {
   behaviorGrid: Uint16Array;
   warps: Warp[];
   zones: Zone[];
+  npcs: NPCDef[];
   /** Tileset firstgid values from the Tiled JSON, for GID → metatile ID mapping. */
   tilesetFirstGids: number[] = [];
   /** Tileset source filenames (e.g. 'general.tsj', 'pallet_town.tsj'), parallel to tilesetFirstGids. */
@@ -26,6 +27,7 @@ export class MapData {
     this.behaviorGrid = new Uint16Array(width * height);
     this.warps = [];
     this.zones = [];
+    this.npcs = [];
   }
 
   getBottomTile(x: number, y: number): number {
@@ -114,6 +116,23 @@ export class MapData {
               destWarpId: Number(props.destWarpId ?? 0),
               destX: 0,
               destY: 0,
+            };
+          });
+        } else if (objLayer.name === 'npcs') {
+          map.npcs = objLayer.objects.map(obj => {
+            const props = Object.fromEntries(
+              (obj.properties ?? []).map(p => [p.name, p.value])
+            );
+            return {
+              id: obj.id,
+              name: obj.name,
+              x: Math.floor(obj.x / 16),
+              y: Math.floor(obj.y / 16),
+              sprite: String(props.sprite ?? ''),
+              direction: (String(props.direction ?? 'down')) as Direction,
+              movement: (String(props.movement ?? 'standing')) as NPCDef['movement'],
+              ...(props.paceAxis ? { paceAxis: String(props.paceAxis) as 'horizontal' | 'vertical' } : {}),
+              ...(props.paceDistance != null ? { paceDistance: Number(props.paceDistance) } : {}),
             };
           });
         } else if (objLayer.name === 'zones') {

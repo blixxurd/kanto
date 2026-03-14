@@ -10,17 +10,25 @@ const SURFABLE_BEHAVIORS = new Set([
 
 export class CollisionMap {
   private mapData: MapData | null = null;
+  private entityCheck: ((x: number, y: number) => boolean) | null = null;
   surfing = false;
 
   load(mapData: MapData): void {
     this.mapData = mapData;
   }
 
+  setEntityCheck(fn: (x: number, y: number) => boolean): void {
+    this.entityCheck = fn;
+  }
+
   isPassable(x: number, y: number): boolean {
     if (!this.mapData) return false;
-    if (this.mapData.isPassable(x, y)) return true;
-    if (this.surfing && SURFABLE_BEHAVIORS.has(this.mapData.getBehavior(x, y))) return true;
-    return false;
+    let terrainOk = false;
+    if (this.mapData.isPassable(x, y)) terrainOk = true;
+    else if (this.surfing && SURFABLE_BEHAVIORS.has(this.mapData.getBehavior(x, y))) terrainOk = true;
+    if (!terrainOk) return false;
+    if (this.entityCheck?.(x, y)) return false;
+    return true;
   }
 
   getBehavior(x: number, y: number): number {
